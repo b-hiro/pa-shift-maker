@@ -1,37 +1,66 @@
 import copy
+import csv
 
-def generate_pa_shift(timetable, members_data, rehearsal_time=15, act_time=30):
+def generate_pa_shift(timetable, members_data):
     """
-    PAシフトを作成する関数（現在のバージョン）
+    PAシフトを作成する関数（v2：リハ・本番セット化＆インターバル制約対応）
     """
-    # 元のデータを破壊しないよう、関数内でコピーを作成して計算する
     members = copy.deepcopy(members_data)
     shift_result = {}
 
-    for band in timetable:
+    # 1. タイムテーブルから「シフト対象のバンド」と「前後の順番」を整理する
+    band_times = {} # {"バンド名": ["リハ時間", "本番時間"]}
+    band_order = [] # 前後関係を把握するためのリスト
+    
+    for entry in timetable:
+        if entry["type"] == "break":
+            continue # 休憩はシフト計算から除外
+        
+        b_name = entry["name"]
+        if b_name not in band_times:
+            band_times[b_name] = []
+            band_order.append(b_name)
+        band_times[b_name].append(entry["time"])
+
+    # 2. バンドごとにシフトを計算（ここでリハと本番が1セットとして扱われます）
+    for i, band in enumerate(band_order):
         desk_team = []
         stage_team = []
         desk_score = 0
         stage_score = 0
 
-        # 1. NGの人を除外して、この枠に入れる候補者リストを作成
+        # --- 新仕様：前後のバンドを取得 ---
+        prev_band = band_order[i-1] if i > 0 else None
+        next_band = band_order[i+1] if i < len(band_order)-1 else None
+
         available = []
         for m in members:
-            if band not in m["ng"]:
-                # 優先度ポイントの計算
-                priority = -m["count"] * 10 
-                if band in m["req"]:
-                    priority += 100
-                priority += m["skill"]
-                
-                candidate = m.copy()
-                candidate["priority"] = priority
-                available.append(candidate)
-        
-        # 2. 優先度ポイントが高い順に並び替え
+            # NG判定①：自分が出演するバンド、またはその「前後」ならシフト不可
+            if band in m["ng_bands"] or prev_band in m["ng_bands"] or next_band in m["ng_bands"]:
+                continue
+            
+            # NG判定②：LINEで指定されたNG時間に被っているか
+            time_conflict = False
+            for t in band_times[band]: # リハと本番の時間、両方をチェック
+                if t in m["ng_times"]:
+                    time_conflict = True
+                    break
+            if time_conflict:
+                continue
+
+            # 優先度計算（今まで通り）
+            priority = -m["count"] * 10
+            if band in m.get("req_bands", []):
+                priority += 100
+            priority += m["skill"]
+            
+            candidate = m.copy()
+            candidate["priority"] = priority
+            available.append(candidate)
+
         available.sort(key=lambda x: x["priority"], reverse=True)
 
-        # 3. 卓チームを組む（目標：スキル合計5以上）
+        # チーム編成（卓5以上、ステージ3以上）
         remaining = []
         for m in available:
             if desk_score < 5:
@@ -40,50 +69,79 @@ def generate_pa_shift(timetable, members_data, rehearsal_time=15, act_time=30):
             else:
                 remaining.append(m)
                 
-        # 4. ステージチームを組む（目標：スキル合計3以上）
         for m in remaining:
             if stage_score < 3:
                 stage_team.append(m)
                 stage_score += m["skill"]
         
-        # 5. 結果の保存とカウントの更新
-        if desk_score >= 5 and stage_score >= 3:
-            shift_result[band] = {
-                "卓": [m["name"] for m in desk_team], 
-                "ステージ": [m["name"] for m in stage_team],
-                "リハ時間": rehearsal_time,
-                "本番時間": act_time
-            }
-            assigned_names = [m["name"] for m in desk_team + stage_team]
-            for m in members:
-                if m["name"] in assigned_names:
-                    m["count"] += 1
-        else:
-            shift_result[band] = {"エラー": "スキル条件を満たすメンバーが足りません！要手動調整"}
+        # 3. 結果の保存とカウント更新（2枠セットで1カウント）
+        shift_result[band] = {
+            "卓": [m["name"] for m in desk_team], 
+            "ステージ": [m["name"] for m in stage_team]
+        }
+        
+        assigned_names = [m["name"] for m in desk_team + stage_team]
+        for m in members:
+            if m["name"] in assigned_names:
+                m["count"] += 1
 
     return shift_result, members
 
+def export_to_csv(timetable, shift_result, filename="pa_shift.csv"):
+    """
+    作成したシフトをCSVファイルとして保存する関数
+    """
+    with open(filename, mode='w', encoding='utf-8-sig', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["時間帯", "種別", "バンド名", "担当（卓）", "担当（ステージ）"])
+
+        for entry in timetable:
+            time_str = entry["time"]
+            type_str = entry["type"]
+            band_name = entry["name"]
+            
+            if type_str == "break":
+                writer.writerow([time_str, type_str, band_name, "", ""])
+                continue
+            
+            assigned = shift_result.get(band_name, {})
+            desk = "、".join(assigned.get("卓", []))
+            stage = "、".join(assigned.get("ステージ", []))
+
+            writer.writerow([time_str, type_str, band_name, desk, stage])
+            
+    print(f"CSVファイルを保存しました: {filename}")
+
+
 # ==========================================
-# 実行用ブロック（テストデータ）
+# 実行用ブロック
 # ==========================================
 if __name__ == "__main__":
-    my_timetable = ["バンドA", "バンドB", "バンドC"]
-    
-    my_members = [
-        {"name": "ベテラン先輩", "skill": 5, "count": 0, "ng": ["バンドA"], "req": ["バンドC"]},
-        {"name": "自分", "skill": 5, "count": 0, "ng": ["バンドC"], "req": []},
-        {"name": "中堅同期", "skill": 3, "count": 0, "ng": [], "req": ["バンドA"]},
-        {"name": "初心者後輩1", "skill": 1, "count": 0, "ng": [], "req": []},
-        {"name": "初心者後輩2", "skill": 1, "count": 0, "ng": ["バンドB"], "req": []},
-        {"name": "初心者後輩3", "skill": 1, "count": 0, "ng": [], "req": []}
+    # 新しいインプットデータ
+    my_timetable = [
+        {"time": "10:30-10:45", "type": "rh",   "name": "LUNA SEA(D)"},
+        {"time": "10:45-10:55", "type": "act",  "name": "LUNA SEA(D)"},
+        {"time": "10:55-11:10", "type": "rh",   "name": "PK shanpoo"},
+        {"time": "11:10-11:20", "type": "act",  "name": "PK shanpoo"},
+        {"time": "11:20-12:20", "type": "break","name": "昼休憩"}, 
     ]
 
-    result_shift, final_members = generate_pa_shift(my_timetable, my_members)
+    my_members = [
+        # みらいさんはLUNA SEAに出演するため、前後（ここではPK shanpoo）もシフトに入れないはず
+        {"name": "みらい", "skill": 5, "count": 0, "ng_bands": ["LUNA SEA(D)"], "ng_times": [], "req_bands": []},
+        {"name": "るい", "skill": 3, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "先輩A", "skill": 5, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "後輩B", "skill": 1, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "後輩C", "skill": 1, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+    ]
 
-    print("--- シフト作成結果 ---")
-    for band, teams in result_shift.items():
-        print(f"【{band}】: {teams}")
-        
-    print("\n--- 最終的なシフト入数 ---")
+    # 1. シフト計算を実行
+    result_shift, final_members = generate_pa_shift(my_timetable, my_members)
+    
+    # 2. 結果をCSVに出力
+    export_to_csv(my_timetable, result_shift, "pa_shift_test.csv")
+
+    # 3. 黒い画面（ターミナル）にも確認用に出力
+    print("\n--- メンバーの最終シフト入数 ---")
     for m in final_members:
         print(f"{m['name']}: {m['count']}回")
