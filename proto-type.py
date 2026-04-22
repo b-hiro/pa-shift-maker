@@ -1,5 +1,36 @@
 import copy
 import csv
+from datetime import datetime, timedelta
+
+def generate_timetable(start_time_str, band_list, rh_mins, act_mins, break_info=None):
+    """
+    開始時間とバンドリストから、タイムテーブルを自動生成する関数
+    """
+    timetable = []
+    # 文字列の時間を、計算できる「時計データ」に変換
+    current_time = datetime.strptime(start_time_str, "%H:%M")
+
+    for band in band_list:
+        # 1. リハの時間を計算して追加
+        rh_start = current_time.strftime("%H:%M")
+        current_time += timedelta(minutes=rh_mins) # リハの分数だけ時間を進める
+        rh_end = current_time.strftime("%H:%M")
+        timetable.append({"time": f"{rh_start}-{rh_end}", "type": "rh", "name": band})
+
+        # 2. 本番の時間を計算して追加
+        act_start = current_time.strftime("%H:%M")
+        current_time += timedelta(minutes=act_mins) # 本番の分数だけ時間を進める
+        act_end = current_time.strftime("%H:%M")
+        timetable.append({"time": f"{act_start}-{act_end}", "type": "act", "name": band})
+
+        # 3. お昼休みの判定（もし指定されていて、今のバンドが終わった直後なら）
+        if break_info and break_info.get("after_band") == band:
+            break_start = current_time.strftime("%H:%M")
+            current_time += timedelta(minutes=break_info["duration"]) # 休憩の分数だけ進める
+            break_end = current_time.strftime("%H:%M")
+            timetable.append({"time": f"{break_start}-{break_end}", "type": "break", "name": "昼休憩"})
+
+    return timetable
 
 def generate_pa_shift(timetable, members_data):
     """
@@ -117,14 +148,17 @@ def export_to_csv(timetable, shift_result, filename="pa_shift.csv"):
 # 実行用ブロック
 # ==========================================
 if __name__ == "__main__":
-    # 新しいインプットデータ
-    my_timetable = [
-        {"time": "10:30-10:45", "type": "rh",   "name": "LUNA SEA(D)"},
-        {"time": "10:45-10:55", "type": "act",  "name": "LUNA SEA(D)"},
-        {"time": "10:55-11:10", "type": "rh",   "name": "PK shanpoo"},
-        {"time": "11:10-11:20", "type": "act",  "name": "PK shanpoo"},
-        {"time": "11:20-12:20", "type": "break","name": "昼休憩"}, 
-    ]
+    # 出演バンドのリストを定義するだけ！
+    live_bands = ["LUNA SEA(D)", "PK shanpoo", "BUMP(コピー)", "アジカン(コピー)"]
+    
+    # お昼休みの設定（PK shanpooの後に60分）
+    lunch_setting = {"after_band": "PK shanpoo", "duration": 60}
+
+    # 関数を呼び出して、タイムテーブルを自動生成！
+    # （10:30スタート、リハ15分、本番10分）
+    my_timetable = generate_timetable("11:30", live_bands, 15, 10, lunch_setting)
+
+    # --------------------------------------------------
 
     my_members = [
         # みらいさんはLUNA SEAに出演するため、前後（ここではPK shanpoo）もシフトに入れないはず
