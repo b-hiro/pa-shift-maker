@@ -64,7 +64,8 @@ def generate_pa_shift(timetable, members_data):
         prev_band = band_order[i-1] if i > 0 else None
         next_band = band_order[i+1] if i < len(band_order)-1 else None
 
-        available = []
+        # 卓チーム編成
+        available_desk = []
         for m in members:
             # NG判定①：自分が出演するバンド、またはその「前後」ならシフト不可
             if band in m["ng_bands"] or prev_band in m["ng_bands"] or next_band in m["ng_bands"]:
@@ -79,31 +80,57 @@ def generate_pa_shift(timetable, members_data):
             if time_conflict:
                 continue
 
-            # 優先度計算（今まで通り）
-            priority = -m["count"] * 10
+            # 卓優先度計算
+            priority_desk = -m["count"] * 10
             if band in m.get("req_bands", []):
-                priority += 100
-            priority += m["skill"]
+                priority_desk += 100
+            priority_desk += m["skill_desk"]
             
             candidate = m.copy()
-            candidate["priority"] = priority
-            available.append(candidate)
+            candidate["priority_desk"] = priority_desk
+            available_desk.append(candidate)
 
-        available.sort(key=lambda x: x["priority"], reverse=True)
+        available_desk.sort(key=lambda x: x["priority_desk"], reverse=True)
 
-        # チーム編成（卓5以上、ステージ3以上）
-        remaining = []
-        for m in available:
+        for m in available_desk:
             if desk_score < 5:
                 desk_team.append(m)
-                desk_score += m["skill"]
-            else:
-                remaining.append(m)
-                
-        for m in remaining:
+                desk_score += m["skill_desk"]
+        
+        # ステージチーム編成
+        available_stage = []
+        for m in members:
+            if m in desk_team:  # すでに卓に割り当てられたメンバーは除く
+                continue
+            # NG判定①：自分が出演するバンド、またはその「前後」ならシフト不可
+            if band in m["ng_bands"] or prev_band in m["ng_bands"] or next_band in m["ng_bands"]:
+                continue
+            
+            # NG判定②：LINEで指定されたNG時間に被っているか
+            time_conflict = False
+            for t in band_times[band]: # リハと本番の時間、両方をチェック
+                if t in m["ng_times"]:
+                    time_conflict = True
+                    break
+            if time_conflict:
+                continue
+
+            # ステージ優先度計算
+            priority_stage = -m["count"] * 10
+            if band in m.get("req_bands", []):
+                priority_stage += 100
+            priority_stage += m["skill_stage"]
+            
+            candidate = m.copy()
+            candidate["priority_stage"] = priority_stage
+            available_stage.append(candidate)
+
+        available_stage.sort(key=lambda x: x["priority_stage"], reverse=True)
+
+        for m in available_stage:
             if stage_score < 3:
                 stage_team.append(m)
-                stage_score += m["skill"]
+                stage_score += m["skill_stage"]
         
         # 3. 結果の保存とカウント更新（2枠セットで1カウント）
         shift_result[band] = {
@@ -162,11 +189,11 @@ if __name__ == "__main__":
 
     my_members = [
         # みらいさんはLUNA SEAに出演するため、前後（ここではPK shanpoo）もシフトに入れないはず
-        {"name": "みらい", "skill": 5, "count": 0, "ng_bands": ["LUNA SEA(D)"], "ng_times": [], "req_bands": []},
-        {"name": "るい", "skill": 3, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
-        {"name": "先輩A", "skill": 5, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
-        {"name": "後輩B", "skill": 1, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
-        {"name": "後輩C", "skill": 1, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "みらい", "skill_desk": 5, "skill_stage": 4, "count": 0, "ng_bands": ["LUNA SEA(D)"], "ng_times": [], "req_bands": []},
+        {"name": "るい", "skill_desk": 3, "skill_stage": 3, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "先輩A", "skill_desk": 5, "skill_stage": 5, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "後輩B", "skill_desk": 1, "skill_stage": 1, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
+        {"name": "後輩C", "skill_desk": 1, "skill_stage": 2, "count": 0, "ng_bands": [], "ng_times": [], "req_bands": []},
     ]
 
     # 1. シフト計算を実行
