@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PA-Shift 勤務表生成ツール</title>
+    <title>PA-Shift タイムテーブル・シフト生成ツール</title>
     <style>
         * {
             margin: 0;
@@ -329,54 +329,62 @@
         <!-- ページ1: タイムテーブル設定 -->
         <div id="page1" class="page active">
             <div class="page-header">
-                <h1>📅 ページ1: タイムテーブル設定</h1>
-                <p>勤務表の基本設定を行います</p>
+                <h1>🎸 ページ1: タイムテーブル設定</h1>
+                <p>イベント開始時間と出演バンドを設定します</p>
             </div>
 
             <div class="comment">
                 <strong>💡 このページについて:</strong>
-                勤務期間と営業時間を設定します。これらは勤務表全体に適用される基本設定です。
+                イベント開始時間、リハーサル時間、本番時間、昼休憩の設定を行い、出演バンドのリストを作成します。
             </div>
 
             <form id="timetableForm">
-                <!-- 勤務期間設定 -->
+                <!-- 開始時間設定 -->
                 <div class="form-group">
-                    <label>📆 勤務期間（開始日）</label>
-                    <input type="date" id="startDate" required>
+                    <label>🕐 イベント開始時間</label>
+                    <input type="time" id="startTime" value="11:30" required>
+                </div>
+
+                <!-- リハ時間設定 -->
+                <div class="form-group">
+                    <label>⏱️ リハーサル時間（分）</label>
+                    <input type="number" id="rehearsalMinutes" value="15" min="1" required>
+                </div>
+
+                <!-- 本番時間設定 -->
+                <div class="form-group">
+                    <label>🎤 本番時間（分）</label>
+                    <input type="number" id="performanceMinutes" value="10" min="1" required>
+                </div>
+
+                <!-- 昼休みの設定 -->
+                <div class="form-group">
+                    <label>🍽️ 昼休憩（分）</label>
+                    <input type="number" id="breakDuration" value="60" min="0" required>
                 </div>
 
                 <div class="form-group">
-                    <label>📆 勤務期間（終了日）</label>
-                    <input type="date" id="endDate" required>
+                    <label>🎵 昼休憩を挿入するバンド（例：PK shanpoo）</label>
+                    <input type="text" id="breakAfterBand" placeholder="バンド名を入力">
                 </div>
 
                 <div class="comment">
-                    <strong>ℹ️ 営業時間について:</strong>
-                    営業時間を24時間形式（HH:MM）で入力してください。例：09:00, 18:00
+                    <strong>🔧 出演バンドリスト:</strong>
+                    下のフィールドにバンド名を入力して追加ボタンを押してください。
                 </div>
 
-                <!-- 営業時間設定 -->
-                <div class="grid-2">
-                    <div class="form-group">
-                        <label>🕐 営業開始時間</label>
-                        <input type="time" id="openTime" required>
-                    </div>
-                    <div class="form-group">
-                        <label>🕕 営業終了時間</label>
-                        <input type="time" id="closeTime" required>
-                    </div>
-                </div>
-
-                <!-- シフト設定 -->
+                <!-- バンド追加セクション -->
                 <div class="form-group">
-                    <label>⏱️ 最小シフト時間（時間）</label>
-                    <input type="number" id="minShiftHours" value="3" min="1" step="0.5" required>
+                    <label>🎸 バンド名</label>
+                    <input type="text" id="bandName" placeholder="例：LUNA SEA(D)">
                 </div>
 
-                <div class="comment">
-                    <strong>🔧 このデータの使われ方:</strong>
-                    ここで設定した値は次のページで各メンバーの条件を設定する際のベースになります。
-                </div>
+                <button type="button" class="btn-secondary" onclick="addBand()">
+                    + バンドを追加
+                </button>
+
+                <!-- 追加されたバンド一覧 -->
+                <div id="bandsList" style="margin-top: 20px;"></div>
 
                 <!-- ナビゲーションボタン -->
                 <div class="button-group">
@@ -391,40 +399,45 @@
         <div id="page2" class="page">
             <div class="page-header">
                 <h1>👥 ページ2: メンバー条件設定</h1>
-                <p>各メンバーの勤務条件を設定します</p>
+                <p>各メンバーのスキルと勤務条件を設定します</p>
             </div>
 
             <div class="comment">
                 <strong>💡 このページについて:</strong>
-                各メンバーの名前、希望勤務日、希望時間帯などを設定します。複数メンバーを追加できます。
+                各メンバーの名前、卓・ステージスキル、NG条件などを設定します。複数メンバーを追加できます。
             </div>
 
             <form id="memberForm">
                 <!-- メンバー追加セクション -->
                 <div class="form-group">
                     <label>👤 メンバー名</label>
-                    <input type="text" id="memberName" placeholder="例：山田太郎">
+                    <input type="text" id="memberName" placeholder="例：みらい">
                 </div>
 
                 <div class="grid-2">
                     <div class="form-group">
-                        <label>📅 勤務可能日（週の日付を入力）</label>
-                        <input type="text" id="availableDays" placeholder="例：月,水,金">
+                        <label>🎚️ 卓スキル（1-5）</label>
+                        <input type="number" id="skillDesk" value="3" min="1" max="5" required>
                     </div>
                     <div class="form-group">
-                        <label>⏰ 希望勤務時間</label>
-                        <input type="text" id="preferredHours" placeholder="例：5,6,7">
+                        <label>🎤 ステージスキル（1-5）</label>
+                        <input type="number" id="skillStage" value="3" min="1" max="5" required>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label>📝 特記事項（最大連続勤務時間など）</label>
-                    <input type="text" id="notes" placeholder="例：最大6時間まで">
+                    <label>🚫 出演禁止バンド（カンマ区切り）</label>
+                    <input type="text" id="ngBands" placeholder="例：LUNA SEA(D),BUMP(コピー)">
                 </div>
 
-                <div class="comment">
-                    <strong>ℹ️ 入力形式について:</strong>
-                    勤務可能日は「月,水,金」のようにカンマで区切ってください。希望勤務時間も同様に入力します。
+                <div class="form-group">
+                    <label>⏰ NG時間帯（カンマ区切り）</label>
+                    <input type="text" id="ngTimes" placeholder="例：11:30-11:45,12:30-12:40">
+                </div>
+
+                <div class="form-group">
+                    <label>⭐ 希望バンド（カンマ区切り）</label>
+                    <input type="text" id="reqBands" placeholder="例：PK shanpoo,アジカン(コピー)">
                 </div>
 
                 <button type="button" class="btn-secondary" onclick="addMember()">
@@ -436,8 +449,14 @@
             <div id="membersList" style="margin-top: 30px;"></div>
 
             <div class="comment">
-                <strong>🔄 前ページへの影響:</strong>
-                ここで追加したメンバー数が次ページの出力形式に影響します。
+                <strong>📋 フィールド説明:</strong>
+                <ul style="margin-top: 10px; margin-left: 20px; color: #666; font-size: 13px;">
+                    <li><strong>卓スキル:</strong> ミキサー・卓業務のスキル度</li>
+                    <li><strong>ステージスキル:</strong> ステージ機材・現場サポートのスキル度</li>
+                    <li><strong>出演禁止バンド:</strong> そのバンドに出演するため、シフトに入れないバンド</li>
+                    <li><strong>NG時間帯:</strong> その時間帯に入れないバンドのシフト時間</li>
+                    <li><strong>希望バンド:</strong> 特に割り当てたい優先バンド</li>
+                </ul>
             </div>
 
             <!-- ナビゲーションボタン -->
@@ -454,14 +473,14 @@
         <!-- ページ3: プレビュー・出力 -->
         <div id="page3" class="page">
             <div class="page-header">
-                <h1>📊 ページ3: プレビュー・出力</h1>
-                <p>生成される勤務表を確認して出力します</p>
+                <h1>📊 ページ3: シフト結果・出力</h1>
+                <p>生成される PA シフトを確認して出力します</p>
             </div>
 
             <div class="comment">
                 <strong>💡 このページについて:</strong>
-                前のページで設定した内容から自動生成された勤務表がここに表示されます。
-                問題がなければCSVで出力できます。
+                設定した内容から自動生成された PA シフトがここに表示されます。
+                バンドごとに卓チームとステージチームが割り当てられます。
             </div>
 
             <!-- サマリー情報 -->
@@ -469,49 +488,45 @@
                 <h3 style="color: #333; margin-bottom: 15px;">📋 設定内容のサマリー</h3>
                 <div class="grid-2">
                     <div>
-                        <p style="color: #666; font-size: 13px;">勤務期間</p>
-                        <p id="summaryPeriod" style="color: #333; font-weight: 600;">---</p>
+                        <p style="color: #666; font-size: 13px;">開始時間</p>
+                        <p id="summaryStartTime" style="color: #333; font-weight: 600;">---</p>
                     </div>
                     <div>
-                        <p style="color: #666; font-size: 13px;">営業時間</p>
-                        <p id="summaryHours" style="color: #333; font-weight: 600;">---</p>
+                        <p style="color: #666; font-size: 13px;">出演バンド数</p>
+                        <p id="summaryBandCount" style="color: #333; font-weight: 600;">0 バンド</p>
                     </div>
                     <div>
                         <p style="color: #666; font-size: 13px;">登録メンバー数</p>
                         <p id="summaryMembers" style="color: #333; font-weight: 600;">0 人</p>
                     </div>
                     <div>
-                        <p style="color: #666; font-size: 13px;">最小シフト時間</p>
-                        <p id="summaryMinHours" style="color: #333; font-weight: 600;">---</p>
+                        <p style="color: #666; font-size: 13px;">推定イベント終了時刻</p>
+                        <p id="summaryEndTime" style="color: #333; font-weight: 600;">---</p>
                     </div>
                 </div>
             </div>
 
-            <!-- プレビューテーブル -->
+            <!-- シフト結果テーブル -->
             <div class="comment">
-                <strong>📊 勤務表プレビュー:</strong>
-                以下の表は実際に出力されるCSVの内容です。行がメンバー、列が日付となります。
-                セルの値は割り当てられたシフト時間です。
+                <strong>🎵 PA シフト結果:</strong>
+                バンドごとの卓チームとステージチームが表示されます。
             </div>
 
             <div class="preview-table">
-                <table id="previewTable">
+                <table id="shiftResultTable">
                     <thead>
                         <tr>
-                            <th>メンバー名</th>
-                            <th>月</th>
-                            <th>火</th>
-                            <th>水</th>
-                            <th>木</th>
-                            <th>金</th>
-                            <th>土</th>
-                            <th>日</th>
+                            <th>時間帯</th>
+                            <th>種別</th>
+                            <th>バンド名</th>
+                            <th>担当（卓）</th>
+                            <th>担当（ステージ）</th>
                         </tr>
                     </thead>
-                    <tbody id="previewTableBody">
+                    <tbody id="shiftResultBody">
                         <tr>
-                            <td colspan="8" style="text-align: center; color: #999; padding: 30px;">
-                                ← 「次へ」ボタンを押してプレビューを生成してください
+                            <td colspan="5" style="text-align: center; color: #999; padding: 30px;">
+                                「シフトを生成」ボタンを押して結果を生成してください
                             </td>
                         </tr>
                     </tbody>
@@ -520,14 +535,16 @@
 
             <div class="comment">
                 <strong>⚙️ 出力形式について:</strong>
-                「CSVで出力」ボタンをクリックするとサンプルのCSVファイルがダウンロードされます。
-                これはプロトタイプ版なので、実際のデータは「proto-type.py」で処理されます。
+                「CSVで出力」ボタンをクリックするとシフト結果がCSVファイルでダウンロードされます。
             </div>
 
             <!-- ナビゲーション・出力ボタン -->
             <div class="button-group">
                 <button type="button" class="btn-secondary" onclick="goToPage(2)">
                     ← 前へ
+                </button>
+                <button type="button" class="btn-primary" onclick="generateShiftAndPreview()">
+                    🔄 シフトを生成
                 </button>
                 <button type="button" class="btn-primary" onclick="downloadCSV()">
                     📥 CSVで出力
@@ -540,99 +557,141 @@
         // ========================================
         // グローバルデータ管理
         // ========================================
-        // このオブジェクトにすべてのフォーム入力値を保存
         const appData = {
             timetable: {
-                startDate: '',
-                endDate: '',
-                openTime: '',
-                closeTime: '',
-                minShiftHours: 3
+                startTime: "",
+                rehearsalMinutes: 15,
+                performanceMinutes: 10,
+                breakDuration: 60,
+                breakAfterBand: "",
+                bands: []
             },
-            members: []  // メンバー情報の配列
+            members: [],
+            generatedTimetable: null,
+            generatedShift: null
         };
 
         // ========================================
-        // ページナビゲーション機能
+        // ページナビゲーション
         // ========================================
         function goToPage(pageNumber) {
-            // すべてのページを非表示にする
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
 
-            // 指定されたページを表示
             document.getElementById(`page${pageNumber}`).classList.add('active');
 
-            // ステップインジケーターを更新
             document.querySelectorAll('.step').forEach((step, index) => {
                 step.classList.remove('active', 'completed');
                 if (index < pageNumber - 1) {
-                    step.classList.add('completed');  // 過去のステップ
+                    step.classList.add('completed');
                 } else if (index === pageNumber - 1) {
-                    step.classList.add('active');     // 現在のステップ
+                    step.classList.add('active');
                 }
             });
 
-            // ページ3に遷移時、プレビューを生成
-            if (pageNumber === 3) {
-                generatePreview();
-            }
-
-            // ページトップにスクロール
             window.scrollTo(0, 0);
         }
 
         // ========================================
-        // ページ1: タイムテーブル保存機能
+        // ページ1: バンド管理
         // ========================================
-        // ページ1のフォームデータを取得して保存
-        function saveTimetable() {
-            appData.timetable.startDate = document.getElementById('startDate').value;
-            appData.timetable.endDate = document.getElementById('endDate').value;
-            appData.timetable.openTime = document.getElementById('openTime').value;
-            appData.timetable.closeTime = document.getElementById('closeTime').value;
-            appData.timetable.minShiftHours = document.getElementById('minShiftHours').value;
+        function addBand() {
+            const bandName = document.getElementById('bandName').value.trim();
+            
+            if (!bandName) {
+                alert('バンド名を入力してください');
+                return;
+            }
+            
+            if (appData.timetable.bands.includes(bandName)) {
+                alert('同じバンドは追加できません');
+                return;
+            }
+            
+            appData.timetable.bands.push(bandName);
+            document.getElementById('bandName').value = '';
+            renderBandsList();
+        }
+
+        function removeBand(bandName) {
+            appData.timetable.bands = appData.timetable.bands.filter(b => b !== bandName);
+            renderBandsList();
+        }
+
+        function renderBandsList() {
+            const container = document.getElementById('bandsList');
+            
+            if (appData.timetable.bands.length === 0) {
+                container.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">バンドが登録されていません</p>';
+                return;
+            }
+            
+            container.innerHTML = '<div class="band-list">' +
+                appData.timetable.bands.map(band => `
+                    <div class="member-card">
+                        <h3>${band}</h3>
+                        <button type="button" class="btn-secondary" onclick="removeBand('${band}')" style="width: 100%; margin-top: 10px;">
+                            🗑️ 削除
+                        </button>
+                    </div>
+                `).join('') +
+                '</div>';
         }
 
         // ========================================
-        // ページ2: メンバー追加・管理機能
+        // ページ2: メンバー管理
         // ========================================
         function addMember() {
-            // フォームから入力値を取得
             const name = document.getElementById('memberName').value.trim();
-            const availableDays = document.getElementById('availableDays').value.trim();
-            const preferredHours = document.getElementById('preferredHours').value.trim();
-            const notes = document.getElementById('notes').value.trim();
+            const skillDesk = parseInt(document.getElementById('skillDesk').value) || 3;
+            const skillStage = parseInt(document.getElementById('skillStage').value) || 3;
+            const ngBands = document.getElementById('ngBands').value.trim()
+                .split(',')
+                .map(b => b.trim())
+                .filter(b => b.length > 0);
+            const ngTimes = document.getElementById('ngTimes').value.trim()
+                .split(',')
+                .map(t => t.trim())
+                .filter(t => t.length > 0);
+            const reqBands = document.getElementById('reqBands').value.trim()
+                .split(',')
+                .map(b => b.trim())
+                .filter(b => b.length > 0);
 
-            // 入力値チェック
             if (!name) {
                 alert('メンバー名を入力してください');
                 return;
             }
 
-            // メンバー情報を配列に追加
             const member = {
-                id: Date.now(),  // ユニークなIDとしてタイムスタンプを使用
+                id: Date.now(),
                 name: name,
-                availableDays: availableDays,
-                preferredHours: preferredHours,
-                notes: notes
+                skill_desk: skillDesk,
+                skill_stage: skillStage,
+                count: 0,
+                ng_bands: ngBands,
+                ng_times: ngTimes,
+                req_bands: reqBands
             };
 
             appData.members.push(member);
 
-            // 入力フォームをクリア
             document.getElementById('memberName').value = '';
-            document.getElementById('availableDays').value = '';
-            document.getElementById('preferredHours').value = '';
-            document.getElementById('notes').value = '';
+            document.getElementById('skillDesk').value = '3';
+            document.getElementById('skillStage').value = '3';
+            document.getElementById('ngBands').value = '';
+            document.getElementById('ngTimes').value = '';
+            document.getElementById('reqBands').value = '';
 
-            // メンバーリストを再描画
             renderMembersList();
         }
 
-        // メンバーリストをHTMLで表示
+        function removeMember(memberId) {
+            appData.members = appData.members.filter(m => m.id !== memberId);
+            renderMembersList();
+        }
+
         function renderMembersList() {
             const container = document.getElementById('membersList');
 
@@ -641,14 +700,15 @@
                 return;
             }
 
-            // メンバーカードをHTMLで生成
             container.innerHTML = appData.members.map(member => `
                 <div class="member-card">
                     <h3>${member.name}</h3>
                     <div class="member-info">
-                        <div><strong>勤務可能日:</strong> ${member.availableDays || '---'}</div>
-                        <div><strong>希望時間:</strong> ${member.preferredHours || '---'}</div>
-                        <div><strong>特記事項:</strong> ${member.notes || '---'}</div>
+                        <div><strong>卓スキル:</strong> ${member.skill_desk}/5</div>
+                        <div><strong>ステージスキル:</strong> ${member.skill_stage}/5</div>
+                        <div><strong>NG バンド:</strong> ${member.ng_bands.length > 0 ? member.ng_bands.join(', ') : 'なし'}</div>
+                        <div><strong>NG 時間:</strong> ${member.ng_times.length > 0 ? member.ng_times.join(', ') : 'なし'}</div>
+                        <div><strong>希望バンド:</strong> ${member.req_bands.length > 0 ? member.req_bands.join(', ') : 'なし'}</div>
                         <button type="button" class="btn-secondary" onclick="removeMember(${member.id})" style="grid-column: 1/-1; margin-top: 10px;">
                             🗑️ 削除
                         </button>
@@ -657,84 +717,167 @@
             `).join('');
         }
 
-        // メンバーを削除
-        function removeMember(memberId) {
-            appData.members = appData.members.filter(m => m.id !== memberId);
-            renderMembersList();
+        // ========================================
+        // ページ3: シフト生成・プレビュー（Python API を呼び出し）
+        // ========================================
+        
+        // Python バックエンドへのリクエスト
+        async function callPythonBackend(payload) {
+            try {
+                const response = await fetch('http://localhost:5000/api/generate-shift', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Python バックエンド通信エラー:', error);
+                alert('Python サーバーとの通信に失敗しました。\nサーバーが起動していることを確認してください。\n\n起動コマンド: python app.py');
+                return null;
+            }
         }
 
         // ========================================
-        // ページ3: プレビュー生成・出力機能
+        // 生成・プレビュー処理（Python API を使用）
         // ========================================
-        function generatePreview() {
+        async function generateShiftAndPreview() {
             // ページ1のデータを保存
-            saveTimetable();
+            appData.timetable.startTime = document.getElementById('startTime').value;
+            appData.timetable.rehearsalMinutes = parseInt(document.getElementById('rehearsalMinutes').value);
+            appData.timetable.performanceMinutes = parseInt(document.getElementById('performanceMinutes').value);
+            appData.timetable.breakDuration = parseInt(document.getElementById('breakDuration').value);
+            appData.timetable.breakAfterBand = document.getElementById('breakAfterBand').value;
 
-            // サマリーセクションを更新
-            document.getElementById('summaryPeriod').textContent = 
-                `${appData.timetable.startDate} ～ ${appData.timetable.endDate}`;
-            document.getElementById('summaryHours').textContent = 
-                `${appData.timetable.openTime} ～ ${appData.timetable.closeTime}`;
-            document.getElementById('summaryMembers').textContent = 
-                `${appData.members.length} 人`;
-            document.getElementById('summaryMinHours').textContent = 
-                `${appData.timetable.minShiftHours} 時間`;
-
-            // プレビューテーブルを生成
-            generatePreviewTable();
-        }
-
-        function generatePreviewTable() {
-            const tbody = document.getElementById('previewTableBody');
-
-            // メンバーがいない場合
-            if (appData.members.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #999; padding: 30px;">メンバーが登録されていません</td></tr>';
+            // バリデーション
+            if (!appData.timetable.startTime) {
+                alert('開始時間を設定してください');
                 return;
             }
 
-            // 各メンバーの行を生成
-            tbody.innerHTML = appData.members.map(member => {
-                // サンプルシフトデータ：実際はproto-type.pyで計算される
-                const sampleShifts = ['6時間', '5時間', '-', '6時間', '5時間', '7時間', '-'];
-                
+            if (appData.timetable.bands.length === 0) {
+                alert('最低1つ以上のバンドを追加してください');
+                return;
+            }
+
+            if (appData.members.length === 0) {
+                alert('最低1人以上のメンバーを追加してください');
+                return;
+            }
+
+            // Python バックエンドへのペイロード構築
+            const payload = {
+                start_time: appData.timetable.startTime,
+                bands: appData.timetable.bands,
+                rh_mins: appData.timetable.rehearsalMinutes,
+                act_mins: appData.timetable.performanceMinutes,
+                break_duration: appData.timetable.breakDuration,
+                break_after_band: appData.timetable.breakAfterBand,
+                members: appData.members
+            };
+
+            // Python API を呼び出し
+            const result = await callPythonBackend(payload);
+            
+            if (!result) {
+                return;
+            }
+
+            // 結果を保存
+            appData.generatedTimetable = result.timetable;
+            appData.generatedShift = result.shift;
+            appData.members = result.members;  // カウント更新後のメンバーデータ
+
+            // プレビュー表示
+            updateSummary();
+            displayShiftResults();
+        }
+
+        function updateSummary() {
+            document.getElementById('summaryStartTime').textContent = appData.timetable.startTime;
+            document.getElementById('summaryBandCount').textContent = `${appData.timetable.bands.length} バンド`;
+            document.getElementById('summaryMembers').textContent = `${appData.members.length} 人`;
+
+            // 終了時刻推定
+            if (appData.generatedTimetable && appData.generatedTimetable.length > 0) {
+                const lastEntry = appData.generatedTimetable[appData.generatedTimetable.length - 1];
+                const endTime = lastEntry.time.split('-')[1];
+                document.getElementById('summaryEndTime').textContent = endTime;
+            }
+        }
+
+        function displayShiftResults() {
+            const tbody = document.getElementById('shiftResultBody');
+
+            if (!appData.generatedTimetable) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999; padding: 30px;">シフトデータがありません</td></tr>';
+                return;
+            }
+
+            const rows = appData.generatedTimetable.map(entry => {
+                const assigned = appData.generatedShift[entry.name] || { "卓": [], "ステージ": [] };
+                const desk = assigned["卓"].join('、');
+                const stage = assigned["ステージ"].join('、');
+
                 return `
                     <tr>
-                        <td><strong>${member.name}</strong></td>
-                        ${sampleShifts.map(shift => `<td>${shift}</td>`).join('')}
+                        <td>${entry.time}</td>
+                        <td>${entry.type === 'rh' ? 'リハ' : entry.type === 'act' ? '本番' : '休憩'}</td>
+                        <td>${entry.name}</td>
+                        <td>${desk || '-'}</td>
+                        <td>${stage || '-'}</td>
                     </tr>
                 `;
             }).join('');
+
+            tbody.innerHTML = rows;
         }
 
         // ========================================
-        // CSV出力機能
+        // CSV出力
         // ========================================
         function downloadCSV() {
-            // CSVのヘッダー行を作成
-            const headers = ['メンバー名', '月', '火', '水', '木', '金', '土', '日'];
-            
-            // CSVのデータ行を作成
-            const rows = appData.members.map(member => {
-                const sampleShifts = ['6時間', '5時間', '-', '6時間', '5時間', '7時間', '-'];
-                return [member.name, ...sampleShifts];
+            if (!appData.generatedTimetable) {
+                alert('先にシフトを生成してください');
+                return;
+            }
+
+            const headers = ['時間帯', '種別', 'バンド名', '担当（卓）', '担当（ステージ）'];
+            const rows = appData.generatedTimetable.map(entry => {
+                const assigned = appData.generatedShift[entry.name] || { "卓": [], "ステージ": [] };
+                const desk = assigned["卓"].join('、');
+                const stage = assigned["ステージ"].join('、');
+
+                return [
+                    entry.time,
+                    entry.type === 'rh' ? 'リハ' : entry.type === 'act' ? '本番' : '休憩',
+                    entry.name,
+                    desk,
+                    stage
+                ];
             });
 
-            // CSVテキストを生成（ヘッダー + データ）
+            // CSV テキスト生成（BOM付き UTF-8）
             const csvContent = [
                 headers.join(','),
-                ...rows.map(row => row.join(','))
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
             ].join('\n');
 
-            // Blobオブジェクトを作成してダウンロード
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            // Blob作成
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
-            
+
             link.setAttribute('href', url);
-            link.setAttribute('download', `勤務表_${new Date().toISOString().split('T')[0]}.csv`);
+            link.setAttribute('download', `pa_shift_${new Date().toISOString().split('T')[0]}.csv`);
             link.style.visibility = 'hidden';
-            
+
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -743,21 +886,13 @@
         }
 
         // ========================================
-        // 初期化処理
+        // 初期化
         // ========================================
-        // ページロード時に実行
         window.addEventListener('load', function() {
-            // 本日の日付をデフォルト値として設定
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('startDate').value = today;
-            
-            // 7日後をデフォルト値として設定
-            const weekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-            document.getElementById('endDate').value = weekLater;
-            
-            // 営業時間のデフォルト値
-            document.getElementById('openTime').value = '09:00';
-            document.getElementById('closeTime').value = '18:00';
+            document.getElementById('startTime').value = '11:30';
+            document.getElementById('breakAfterBand').value = 'PK shanpoo';
+            renderBandsList();
+            renderMembersList();
         });
     </script>
 </body>
