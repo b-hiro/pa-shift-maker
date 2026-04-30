@@ -533,6 +533,30 @@
                 </table>
             </div>
 
+            <!-- メンバーシフト回数集計 -->
+            <div class="comment" style="margin-top: 30px;">
+                <strong>📊 シフト割り当て回数集計:</strong>
+                各メンバーがシフトに割り当てられた回数を表示します（リハ+本番 = 1回）
+            </div>
+
+            <div class="preview-table">
+                <table id="memberCountTable">
+                    <thead>
+                        <tr>
+                            <th>メンバー名</th>
+                            <th>シフト回数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="memberCountBody">
+                        <tr>
+                            <td colspan="2" style="text-align: center; color: #999; padding: 30px;">
+                                シフト回数のデータが表示されます
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
             <div class="comment">
                 <strong>⚙️ 出力形式について:</strong>
                 「CSVで出力」ボタンをクリックするとシフト結果がCSVファイルでダウンロードされます。
@@ -837,6 +861,32 @@
             }).join('');
 
             tbody.innerHTML = rows;
+
+            // メンバーカウント集計を表示
+            displayMemberCounts();
+        }
+
+        function displayMemberCounts() {
+            const countBody = document.getElementById('memberCountBody');
+
+            if (!appData.members || appData.members.length === 0) {
+                countBody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: #999; padding: 30px;">メンバーデータがありません</td></tr>';
+                return;
+            }
+
+            // メンバーをカウント値で降順ソート
+            const sortedMembers = [...appData.members].sort((a, b) => b.count - a.count);
+
+            const rows = sortedMembers.map(member => {
+                return `
+                    <tr>
+                        <td>${member.name}</td>
+                        <td style="font-weight: 600; color: #667eea;">${member.count} 回</td>
+                    </tr>
+                `;
+            }).join('');
+
+            countBody.innerHTML = rows;
         }
 
         // ========================================
