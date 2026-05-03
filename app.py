@@ -1,12 +1,16 @@
 """
 PA-Shift Generator Backend Server
 proto-type.py をベースに Flask で API サーバーを構築
+複数日対応版
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import copy
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from io import BytesIO
 
 app = Flask(__name__)
 CORS(app)  # CORS対応
@@ -166,9 +170,248 @@ def generate_pa_shift(timetable, members_data):
     return shift_result, members
 
 
-# ==========================================
-# API エンドポイント
-# ==========================================
+def generate_timetable_multi_day(timetable_config):
+    """
+    複数日のタイムテーブルを生成する関数
+    timetable_config: {
+        "num_days": 2,
+        "days": [
+            {
+                "day_number": 1,
+                "start_time": "11:30",
+                "bands": ["band1", "band2"],
+                "rh_mins": 15,
+                "act_mins": 10,
+                "break_duration": 60,
+                "break_after_band": "band1"
+            },
+            {...}
+        ]
+    }
+    """
+    result = {}
+    for day_config in timetable_config.get("days", []):
+        day_num = day_config.get("day_number", 1)
+        timetable = generate_timetable(
+            day_config.get("start_time", "11:30"),
+            day_config.get("bands", []),
+            day_config.get("rh_mins", 15),
+            day_config.get("act_mins", 10),
+            {
+                "after_band": day_config.get("break_after_band", ""),
+                "duration": day_config.get("break_duration", 60)
+            } if day_config.get("break_after_band") else None
+        )
+        result[f"day_{day_num}"] = timetable
+    return result
+
+
+def generate_pa_shift_multi_day(timetable_multi, members_data):
+    """
+    複数日のシフトを生成する関数
+    """
+    members = copy.deepcopy(members_data)
+    shift_result = {}
+
+    for day_key, timetable in sorted(timetable_multi.items()):
+        # 日番号を抽出
+        day_num = int(day_key.split('_')[1])
+
+        # その日のNG時間をメンバーのng_timesに設定
+        for member in members:
+            ng_times_for_day = []
+            if isinstance(member.get("ng_times"), dict):
+                # 日別のNG時間
+                day_key_str = f"day_{day_num}"
+                if day_key_str in member["ng_times"]:
+                    ng_times_for_day = member["ng_times"][day_key_str]
+            member["ng_times"] = ng_times_for_day
+
+        # その日のシフトを生成
+        shift_result[day_key], members = generate_pa_shift(timetable, members)
+
+    return shift_result, members
+
+
+def create_excel_workbook(timetable_multi, shift_result, members):
+    """
+    複数日のシフトをエクセルワークブックとして作成
+    各日ごとに1シート、最後に集計シートを追加
+    """
+    wb = Workbook()
+    wb.remove(wb.active)  # デフォルトシートを削除
+
+    # スタイル定義
+    header_fill = PatternFill(start_color="667eea", end_color="667eea", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+
+    # 各日のシートを作成
+    day_sheets = {}
+    for day_key, timetable in sorted(timetable_multi.items()):
+        day_num = int(day_key.split('_')[1])
+        sheet_name = f"{day_num}日目"
+        ws = wb.create_sheet(sheet_name)
+        day_sheets[day_key] = ws
+
+        # ヘッダー行
+        headers = ["時間帯", "種別", "バンド名", "担当（卓）", "担当（ステージ）"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        # データ行
+        for row, entry in enumerate(timetable, 2):
+            assigned = shift_result[day_key].get(entry["name"], {"卓": [], "ステージ": []})
+            desk = "、".join(assigned["卓"]) if assigned["卓"] else "-"
+            stage = "、".join(assigned["ステージ"]) if assigned["ステージ"] else "-"
+            entry_type = "リハ" if entry["type"] == "rh" else "本番" if entry["type"] == "act" else "休憩"
+
+            row_data = [entry["time"], entry_type, entry["name"], desk, stage]
+            for col, value in enumerate(row_data, 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = value
+                cell.border = border
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+
+        # 列幅を調整
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 10
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 20
+        ws.column_dimensions['E'].width = 20
+
+    # 全体集計シートを作成
+    ws_summary = wb.create_sheet("全体集計", 0)
+
+    # 集計ヘッダー
+    summary_headers = ["メンバー名", "シフト回数"]
+    for col, header in enumerate(summary_headers, 1):
+        cell = ws_summary.cell(row=1, column=col)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # メンバーをカウント値で降順ソート
+    sorted_members = sorted(members, key=lambda x: x["count"], reverse=True)
+
+    # データ行
+    for row, member in enumerate(sorted_members, 2):
+        member_data = [member["name"], member["count"]]
+        for col, value in enumerate(member_data, 1):
+            cell = ws_summary.cell(row=row, column=col)
+            cell.value = value
+            cell.border = border
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    ws_summary.column_dimensions['A'].width = 20
+    ws_summary.column_dimensions['B'].width = 15
+
+    return wb
+
+
+def check_ng_time_for_day(ng_times_per_day, day_num, time_slot):
+    """
+    指定された日のNG時間内にタイムスロットが含まれているかチェック
+    ng_times_per_day: {"day_1": ["11:30-12:00", "13:00-14:00"], ...}
+    day_num: 日番号（1, 2, ...）
+    time_slot: 時間スロット（"11:30-12:00"）
+    """
+    day_key = f"day_{day_num}"
+    if day_key not in ng_times_per_day:
+        return False
+    return time_slot in ng_times_per_day[day_key]
+
+
+
+
+@app.route("/api/generate-shift-multi-day", methods=["POST"])
+def api_generate_shift_multi_day():
+    """
+    複数日のタイムテーブルとシフトを生成する統合エンドポイント
+    """
+    try:
+        data = request.json
+
+        # リクエストデータの取得
+        num_days = data.get("num_days", 1)
+        days = data.get("days", [])
+        members = data.get("members", [])
+
+        # バリデーション
+        if num_days < 1:
+            return jsonify({"error": "イベント日数は1日以上である必要があります"}), 400
+        if not days or len(days) == 0:
+            return jsonify({"error": "各日のバンド設定が必要です"}), 400
+        if not members:
+            return jsonify({"error": "メンバーが1人以上必要です"}), 400
+
+        # 複数日タイムテーブル生成
+        timetable_multi = generate_timetable_multi_day({"num_days": num_days, "days": days})
+
+        # 複数日シフト生成
+        shift_result, updated_members = generate_pa_shift_multi_day(timetable_multi, members)
+
+        # レスポンス作成
+        return jsonify(
+            {
+                "status": "success",
+                "timetable_multi": timetable_multi,
+                "shift": shift_result,
+                "members": updated_members,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/download-excel", methods=["POST"])
+def api_download_excel():
+    """
+    複数日のシフトをエクセルファイルとしてダウンロード
+    """
+    try:
+        data = request.json
+
+        # リクエストデータの取得
+        timetable_multi = data.get("timetable_multi", {})
+        shift = data.get("shift", {})
+        members = data.get("members", [])
+
+        # バリデーション
+        if not timetable_multi or not shift:
+            return jsonify({"error": "シフトデータが必要です"}), 400
+
+        # エクセルワークブック作成
+        wb = create_excel_workbook(timetable_multi, shift, members)
+
+        # BytesIOに出力
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        # ファイルとして返す
+        return send_file(
+            output,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"pa_shift_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/generate-shift", methods=["POST"])
