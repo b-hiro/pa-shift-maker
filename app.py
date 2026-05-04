@@ -79,6 +79,11 @@ def generate_pa_shift(timetable, members_data):
         prev_band = band_order[i - 1] if i > 0 else None
         next_band = band_order[i + 1] if i < len(band_order) - 1 else None
 
+        # 前のバンドで割り当てられた人を取得（連続性ボーナス用）
+        prev_assigned = set()
+        if prev_band and prev_band in shift_result:
+            prev_assigned = set(shift_result[prev_band]["卓"] + shift_result[prev_band]["ステージ"])
+
         # 卓チーム編成
         available_desk = []
         for m in members:
@@ -104,6 +109,10 @@ def generate_pa_shift(timetable, members_data):
             if band in m.get("req_bands", []):
                 priority_desk += 100
             priority_desk += m["skill_desk"]
+            
+            # 連続性ボーナス：前のバンドで割り当てられた人を優先
+            if m["name"] in prev_assigned:
+                priority_desk += 50
 
             candidate = m.copy()
             candidate["priority_desk"] = priority_desk
@@ -144,6 +153,10 @@ def generate_pa_shift(timetable, members_data):
             if band in m.get("req_bands", []):
                 priority_stage += 100
             priority_stage += m["skill_stage"]
+            
+            # 連続性ボーナス：前のバンドで割り当てられた人を優先
+            if m["name"] in prev_assigned:
+                priority_stage += 50
 
             candidate = m.copy()
             candidate["priority_stage"] = priority_stage

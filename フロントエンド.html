@@ -319,6 +319,25 @@
             background: #667eea;
             color: white;
         }
+
+        /* チェックボックスのスタイル */
+        input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+
+        input[type="checkbox"]:hover {
+            accent-color: #667eea;
+        }
+
+        .member-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 13px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -403,16 +422,23 @@
                     </div>
                 </div>
 
+                <!-- 出演禁止バンド（選択肢から選ぶ） -->
                 <div class="form-group">
-                    <label>🚫 出演禁止バンド（カンマ区切り）</label>
-                    <input type="text" id="ngBands" placeholder="例：LUNA SEA(D),BUMP(コピー)">
+                    <label>🚫 出演禁止バンド</label>
+                    <div id="ngBandsCheckboxes" style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fafafa; max-height: 150px; overflow-y: auto;">
+                        <p style="color: #999; font-size: 13px;">1ページ目で追加したバンドが表示されます</p>
+                    </div>
                 </div>
 
+                <!-- NG時間帯（選択肢から選ぶ） -->
                 <div id="memberNgTimesContainer"></div>
 
+                <!-- 希望バンド（選択肢から選ぶ） -->
                 <div class="form-group">
-                    <label>⭐ 希望バンド（カンマ区切り）</label>
-                    <input type="text" id="reqBands" placeholder="例：PK shanpoo,アジカン(コピー)">
+                    <label>⭐ 希望バンド</label>
+                    <div id="reqBandsCheckboxes" style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fafafa; max-height: 150px; overflow-y: auto;">
+                        <p style="color: #999; font-size: 13px;">1ページ目で追加したバンドが表示されます</p>
+                    </div>
                 </div>
 
                 <button type="button" class="btn-secondary" onclick="addMember()">
@@ -529,7 +555,52 @@
                 }
             });
 
+            // ページ2に遷移した場合、選択肢を更新
+            if (pageNumber === 2) {
+                updatePage2Options();
+            }
+
             window.scrollTo(0, 0);
+        }
+
+        // ページ2の選択肢を更新
+        function updatePage2Options() {
+            const bands = appData.days ? 
+                appData.days.flatMap(day => day.bands) : 
+                (appData.timetable?.bands || []);
+
+            // 出演禁止バンドのチェックボックスを生成
+            const ngBandsContainer = document.getElementById('ngBandsCheckboxes');
+            if (bands.length > 0) {
+                ngBandsContainer.innerHTML = bands.map(band => `
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" value="${band}" class="ng-band-checkbox" style="margin-right: 8px;">
+                            <span>${band}</span>
+                        </label>
+                    </div>
+                `).join('');
+            } else {
+                ngBandsContainer.innerHTML = '<p style="color: #999; font-size: 13px;">1ページ目でバンドを追加してください</p>';
+            }
+
+            // 希望バンドのチェックボックスを生成
+            const reqBandsContainer = document.getElementById('reqBandsCheckboxes');
+            if (bands.length > 0) {
+                reqBandsContainer.innerHTML = bands.map(band => `
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" value="${band}" class="req-band-checkbox" style="margin-right: 8px;">
+                            <span>${band}</span>
+                        </label>
+                    </div>
+                `).join('');
+            } else {
+                reqBandsContainer.innerHTML = '<p style="color: #999; font-size: 13px;">1ページ目でバンドを追加してください</p>';
+            }
+
+            // NG時間帯のUIを更新
+            updateMemberNgTimesUI();
         }
 
         // ページ1: 日別タイムテーブル設定
@@ -687,11 +758,23 @@
             appData.days[dayIndex].bands.push(bandName);
             bandInput.value = '';
             renderDayTabs();
+            
+            // ページ2が表示されている場合、選択肢を更新
+            const page2 = document.getElementById('page2');
+            if (page2 && page2.classList.contains('active')) {
+                updatePage2Options();
+            }
         }
 
         function removeBandFromDay(dayIndex, bandName) {
             appData.days[dayIndex].bands = appData.days[dayIndex].bands.filter(b => b !== bandName);
             renderDayTabs();
+            
+            // ページ2が表示されている場合、選択肢を更新
+            const page2 = document.getElementById('page2');
+            if (page2 && page2.classList.contains('active')) {
+                updatePage2Options();
+            }
         }
 
         // ページ2: メンバー管理
@@ -702,12 +785,15 @@
                 return;
             }
 
-            let html = '<label>⏰ NG時間帯（日別）</label>';
+            let html = '<label style="display: block; margin-bottom: 10px;">⏰ NG時間帯（日別）</label>';
             for (let i = 0; i < appData.numDays; i++) {
+                const dayLabel = i + 1;
                 html += `
-                    <div class="form-group" style="margin-bottom: 10px;">
-                        <label style="font-size: 12px; margin-bottom: 5px;">${i + 1}日目のNG時間帯（カンマ区切り、例：11:30-11:45,12:30-12:40）</label>
-                        <input type="text" id="ngTimes${i}" placeholder="">
+                    <div class="form-group" style="margin-bottom: 15px;">
+                        <label style="font-size: 12px; margin-bottom: 5px; display: block; font-weight: 600;">${dayLabel}日目のNG時間帯</label>
+                        <input type="text" id="ngTimes${i}" placeholder="例：11:30-11:45,12:30-12:40" 
+                            style="width: 100%; margin-bottom: 5px;">
+                        <p style="font-size: 11px; color: #999; margin: 0;">複数の時間帯はカンマで区切ってください（HH:MM-HH:MM 形式）</p>
                     </div>
                 `;
             }
@@ -718,14 +804,12 @@
             const name = document.getElementById('memberName').value.trim();
             const skillDesk = parseInt(document.getElementById('skillDesk').value) || 3;
             const skillStage = parseInt(document.getElementById('skillStage').value) || 3;
-            const ngBands = document.getElementById('ngBands').value.trim()
-                .split(',')
-                .map(b => b.trim())
-                .filter(b => b.length > 0);
-            const reqBands = document.getElementById('reqBands').value.trim()
-                .split(',')
-                .map(b => b.trim())
-                .filter(b => b.length > 0);
+
+            // チェックボックスから選択された値を取得
+            const ngBands = Array.from(document.querySelectorAll('.ng-band-checkbox:checked'))
+                .map(checkbox => checkbox.value);
+            const reqBands = Array.from(document.querySelectorAll('.req-band-checkbox:checked'))
+                .map(checkbox => checkbox.value);
 
             // 日別のNG時間を収集
             const ngTimesPerDay = {};
@@ -754,7 +838,7 @@
                 skill_stage: skillStage,
                 count: 0,
                 ng_bands: ngBands,
-                ng_times: ngTimesPerDay,  // 日別のNG時間を保存
+                ng_times: ngTimesPerDay,
                 req_bands: reqBands
             };
 
@@ -763,8 +847,12 @@
             document.getElementById('memberName').value = '';
             document.getElementById('skillDesk').value = '3';
             document.getElementById('skillStage').value = '3';
-            document.getElementById('ngBands').value = '';
-            document.getElementById('reqBands').value = '';
+            
+            // チェックボックスをリセット
+            document.querySelectorAll('.ng-band-checkbox, .req-band-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            
             for (let i = 0; i < appData.numDays; i++) {
                 const input = document.getElementById(`ngTimes${i}`);
                 if (input) input.value = '';
