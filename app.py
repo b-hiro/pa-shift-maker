@@ -68,6 +68,11 @@ def generate_pa_shift(timetable, members_data):
             band_order.append(b_name)
         band_times[b_name].append(entry["time"])
 
+    # 各メンバーの仕事回数の上限を計算（バンド数*4/登録メンバー数）
+    num_bands = len(band_order)
+    num_members = len(members)
+    shift_limit = (num_bands * 4) / num_members if num_members > 0 else float('inf')
+
     # 2. バンドごとにシフトを計算（ここでリハと本番が1セットとして扱われます）
     for i, band in enumerate(band_order):
         desk_team = []
@@ -87,6 +92,10 @@ def generate_pa_shift(timetable, members_data):
         # 卓チーム編成
         available_desk = []
         for m in members:
+            # 上限チェック：仕事回数が上限に達していないか
+            if m["count"] >= shift_limit:
+                continue
+
             # NG判定①：自分が出演するバンド、またはその「前後」ならシフト不可
             if (
                 band in m["ng_bands"]
@@ -131,6 +140,11 @@ def generate_pa_shift(timetable, members_data):
         for m in members:
             if m["name"] in desk_team_names:  # すでに卓に割り当てられたメンバーは除く
                 continue
+            
+            # 上限チェック：仕事回数が上限に達していないか
+            if m["count"] >= shift_limit:
+                continue
+
             # NG判定①：自分が出演するバンド、またはその「前後」ならシフト不可
             if (
                 band in m["ng_bands"]
