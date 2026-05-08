@@ -15,6 +15,135 @@ from io import BytesIO
 app = Flask(__name__)
 CORS(app)  # CORS対応
 
+DESK_SCORE_THRESHOLD = 5
+STAGE_SCORE_THRESHOLD = 3
+CONTINUITY_BONUS = 20
+
+
+def parse_time_slot(time_slot):
+    """
+    "HH:MM-HH:MM" 形式を datetime の開始/終了に変換
+    """
+    start_str, end_str = time_slot.split("-")
+    start_dt = datetime.strptime(start_str, "%H:%M")
+    end_dt = datetime.strptime(end_str, "%H:%M")
+    return start_dt, end_dt
+
+
+def has_time_overlap(slot_a, slot_b):
+    """
+    2つの時間帯が1分でも重なれば True
+    """
+    start_a, end_a = parse_time_slot(slot_a)
+    start_b, end_b = parse_time_slot(slot_b)
+    return start_a < end_b and start_b < end_a
+
+
+def member_ng_times_for_day(member, day_num=None):
+    """
+    メンバーのNG時間を日別に取り出す（非破壊）
+    """
+    ng_times = member.get("ng_times", [])
+    if isinstance(ng_times, dict):
+        if day_num is None:
+            return []
+        return ng_times.get(f"day_{day_num}", [])
+    if isinstance(ng_times, list):
+        return ng_times
+    return []
+
+
+def has_time_conflict(band_slots, member, day_num=None):
+    """
+    バンド時間帯とメンバーNG時間帯が重複するか
+    """
+    member_ng_slots = member_ng_times_for_day(member, day_num)
+    for band_slot in band_slots:
+        for ng_slot in member_ng_slots:
+            if has_time_overlap(band_slot, ng_slot):
+                return True
+    return False
+
+
+def validate_member_structure(member, index):
+    """
+    メンバー1件の必須項目と型・値を検証する
+    """
+    required_keys = ["name", "skill_desk", "skill_stage", "count", "ng_bands"]
+    for key in required_keys:
+        if key not in member:
+            return f"members[{index}] に必須キー '{key}' がありません"
+
+    if not isinstance(member["name"], str) or not member["name"].strip():
+        return f"members[{index}].name は空でない文字列である必要があります"
+
+    numeric_fields = ["skill_desk", "skill_stage", "count"]
+    for field in numeric_fields:
+        if not isinstance(member[field], (int, float)):
+            return f"members[{index}].{field} は数値である必要があります"
+        if member[field] < 0:
+            return f"members[{index}].{field} は0以上である必要があります"
+
+    if not isinstance(member["ng_bands"], list):
+        return f"members[{index}].ng_bands は配列である必要があります"
+
+    req_bands = member.get("req_bands", [])
+    if req_bands is not None and not isinstance(req_bands, list):
+        return f"members[{index}].req_bands は配列である必要があります"
+
+    ng_times = member.get("ng_times", [])
+    if isinstance(ng_times, list):
+        for i, slot in enumerate(ng_times):
+            if not isinstance(slot, str):
+                return f"members[{index}].ng_times[{i}] は文字列である必要があります"
+            try:
+                parse_time_slot(slot)
+            except (ValueError, TypeError):
+                return f"members[{index}].ng_times[{i}] は 'HH:MM-HH:MM' 形式である必要があります"
+    elif isinstance(ng_times, dict):
+        for day_key, slots in ng_times.items():
+            if not isinstance(day_key, str) or not day_key.startswith("day_"):
+                return f"members[{index}].ng_times のキーは 'day_n' 形式である必要があります"
+            if not isinstance(slots, list):
+                return f"members[{index}].ng_times['{day_key}'] は配列である必要があります"
+            for i, slot in enumerate(slots):
+                if not isinstance(slot, str):
+                    return f"members[{index}].ng_times['{day_key}'][{i}] は文字列である必要があります"
+                try:
+                    parse_time_slot(slot)
+                except (ValueError, TypeError):
+                    return f"members[{index}].ng_times['{day_key}'][{i}] は 'HH:MM-HH:MM' 形式である必要があります"
+    else:
+        return f"members[{index}].ng_times は配列または日別オブジェクトである必要があります"
+
+    return None
+
+
+def validate_members(members):
+    """
+    メンバー配列全体の検証
+    """
+    if not isinstance(members, list) or len(members) == 0:
+        return "メンバーが1人以上必要です"
+
+    for index, member in enumerate(members):
+        if not isinstance(member, dict):
+            return f"members[{index}] はオブジェクトである必要があります"
+        error = validate_member_structure(member, index)
+        if error:
+            return error
+    return None
+
+
+def day_sort_key(day_key):
+    """
+    day_1, day_2, ... を数値としてソートする
+    """
+    try:
+        return int(str(day_key).split("_")[1])
+    except (IndexError, ValueError, TypeError):
+        return float("inf")
+
 
 def generate_timetable(start_time_str, band_list, rh_mins, act_mins, break_info=None):
     """
@@ -47,12 +176,13 @@ def generate_timetable(start_time_str, band_list, rh_mins, act_mins, break_info=
     return timetable
 
 
-def generate_pa_shift(timetable, members_data):
+def generate_pa_shift(timetable, members_data, day_num=None):
     """
     PAシフトを作成する関数（v2：リハ・本番セット化＆インターバル制約対応）
     """
     members = copy.deepcopy(members_data)
     shift_result = {}
+    infeasible_bands = []
 
     # 1. タイムテーブルから「シフト対象のバンド」と「前後の順番」を整理する
     band_times = {}  # {"バンド名": ["リハ時間", "本番時間"]}
@@ -105,12 +235,7 @@ def generate_pa_shift(timetable, members_data):
                 continue
 
             # NG判定②：LINEで指定されたNG時間に被っているか
-            time_conflict = False
-            for t in band_times[band]:  # リハと本番の時間、両方をチェック
-                if t in m["ng_times"]:
-                    time_conflict = True
-                    break
-            if time_conflict:
+            if has_time_conflict(band_times[band], m, day_num):
                 continue
 
             # 卓優先度計算
@@ -121,7 +246,7 @@ def generate_pa_shift(timetable, members_data):
             
             # 連続性ボーナス：前のバンドで割り当てられた人を優先
             if m["name"] in prev_assigned:
-                priority_desk += 50
+                priority_desk += CONTINUITY_BONUS
 
             candidate = m.copy()
             candidate["priority_desk"] = priority_desk
@@ -130,7 +255,7 @@ def generate_pa_shift(timetable, members_data):
         available_desk.sort(key=lambda x: x["priority_desk"], reverse=True)
 
         for m in available_desk:
-            if desk_score < 5:
+            if desk_score < DESK_SCORE_THRESHOLD:
                 desk_team.append(m)
                 desk_score += m["skill_desk"]
 
@@ -154,12 +279,7 @@ def generate_pa_shift(timetable, members_data):
                 continue
 
             # NG判定②：LINEで指定されたNG時間に被っているか
-            time_conflict = False
-            for t in band_times[band]:  # リハと本番の時間、両方をチェック
-                if t in m["ng_times"]:
-                    time_conflict = True
-                    break
-            if time_conflict:
+            if has_time_conflict(band_times[band], m, day_num):
                 continue
 
             # ステージ優先度計算
@@ -170,7 +290,7 @@ def generate_pa_shift(timetable, members_data):
             
             # 連続性ボーナス：前のバンドで割り当てられた人を優先
             if m["name"] in prev_assigned:
-                priority_stage += 50
+                priority_stage += CONTINUITY_BONUS
 
             candidate = m.copy()
             candidate["priority_stage"] = priority_stage
@@ -179,7 +299,7 @@ def generate_pa_shift(timetable, members_data):
         available_stage.sort(key=lambda x: x["priority_stage"], reverse=True)
 
         for m in available_stage:
-            if stage_score < 3:
+            if stage_score < STAGE_SCORE_THRESHOLD:
                 stage_team.append(m)
                 stage_score += m["skill_stage"]
 
@@ -194,7 +314,18 @@ def generate_pa_shift(timetable, members_data):
             if m["name"] in assigned_names:
                 m["count"] += 1
 
-    return shift_result, members
+        if desk_score < DESK_SCORE_THRESHOLD or stage_score < STAGE_SCORE_THRESHOLD:
+            infeasible_bands.append(
+                {
+                    "band": band,
+                    "desk_score": desk_score,
+                    "stage_score": stage_score,
+                    "desk_required": DESK_SCORE_THRESHOLD,
+                    "stage_required": STAGE_SCORE_THRESHOLD,
+                }
+            )
+
+    return shift_result, members, infeasible_bands
 
 
 def generate_timetable_multi_day(timetable_config):
@@ -239,25 +370,19 @@ def generate_pa_shift_multi_day(timetable_multi, members_data):
     """
     members = copy.deepcopy(members_data)
     shift_result = {}
+    infeasible_days = {}
 
-    for day_key, timetable in sorted(timetable_multi.items()):
+    for day_key, timetable in sorted(timetable_multi.items(), key=lambda item: day_sort_key(item[0])):
         # 日番号を抽出
-        day_num = int(day_key.split('_')[1])
+        day_num = day_sort_key(day_key)
 
-        # その日のNG時間をメンバーのng_timesに設定
-        for member in members:
-            ng_times_for_day = []
-            if isinstance(member.get("ng_times"), dict):
-                # 日別のNG時間
-                day_key_str = f"day_{day_num}"
-                if day_key_str in member["ng_times"]:
-                    ng_times_for_day = member["ng_times"][day_key_str]
-            member["ng_times"] = ng_times_for_day
+        # その日のシフトを生成（ng_timesは破壊的に上書きしない）
+        day_shift, members, infeasible_bands = generate_pa_shift(timetable, members, day_num=day_num)
+        shift_result[day_key] = day_shift
+        if infeasible_bands:
+            infeasible_days[day_key] = infeasible_bands
 
-        # その日のシフトを生成
-        shift_result[day_key], members = generate_pa_shift(timetable, members)
-
-    return shift_result, members
+    return shift_result, members, infeasible_days
 
 
 def create_excel_workbook(timetable_multi, shift_result, members):
@@ -280,7 +405,7 @@ def create_excel_workbook(timetable_multi, shift_result, members):
 
     # 各日のシートを作成
     day_sheets = {}
-    for day_key, timetable in sorted(timetable_multi.items()):
+    for day_key, timetable in sorted(timetable_multi.items(), key=lambda item: day_sort_key(item[0])):
         day_num = int(day_key.split('_')[1])
         sheet_name = f"{day_num}日目"
         ws = wb.create_sheet(sheet_name)
@@ -358,7 +483,7 @@ def check_ng_time_for_day(ng_times_per_day, day_num, time_slot):
     day_key = f"day_{day_num}"
     if day_key not in ng_times_per_day:
         return False
-    return time_slot in ng_times_per_day[day_key]
+    return any(has_time_overlap(time_slot, ng_slot) for ng_slot in ng_times_per_day[day_key])
 
 
 
@@ -381,14 +506,25 @@ def api_generate_shift_multi_day():
             return jsonify({"error": "イベント日数は1日以上である必要があります"}), 400
         if not days or len(days) == 0:
             return jsonify({"error": "各日のバンド設定が必要です"}), 400
-        if not members:
-            return jsonify({"error": "メンバーが1人以上必要です"}), 400
+        members_error = validate_members(members)
+        if members_error:
+            return jsonify({"error": members_error}), 400
 
         # 複数日タイムテーブル生成
         timetable_multi = generate_timetable_multi_day({"num_days": num_days, "days": days})
 
         # 複数日シフト生成
-        shift_result, updated_members = generate_pa_shift_multi_day(timetable_multi, members)
+        shift_result, updated_members, infeasible_days = generate_pa_shift_multi_day(timetable_multi, members)
+        if infeasible_days:
+            return (
+                jsonify(
+                    {
+                        "error": "条件を満たすシフトを生成できませんでした",
+                        "infeasible_days": infeasible_days,
+                    }
+                ),
+                400,
+            )
 
         # レスポンス作成
         return jsonify(
@@ -461,8 +597,9 @@ def api_generate_shift():
         # バリデーション
         if not bands:
             return jsonify({"error": "バンドが1つ以上必要です"}), 400
-        if not members:
-            return jsonify({"error": "メンバーが1人以上必要です"}), 400
+        members_error = validate_members(members)
+        if members_error:
+            return jsonify({"error": members_error}), 400
 
         # breakInfoの組み立て
         break_info = None
@@ -473,7 +610,17 @@ def api_generate_shift():
         timetable = generate_timetable(start_time, bands, rh_mins, act_mins, break_info)
 
         # シフト生成
-        shift_result, updated_members = generate_pa_shift(timetable, members)
+        shift_result, updated_members, infeasible_bands = generate_pa_shift(timetable, members)
+        if infeasible_bands:
+            return (
+                jsonify(
+                    {
+                        "error": "条件を満たすシフトを生成できませんでした",
+                        "infeasible_bands": infeasible_bands,
+                    }
+                ),
+                400,
+            )
 
         # レスポンス作成
         return jsonify(

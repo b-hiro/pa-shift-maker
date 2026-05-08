@@ -370,6 +370,17 @@
                 イベント日数、各日の開始時間、出演バンド、リハ・本番時間、昼休憩を設定します。
             </div>
 
+            <div class="form-group" style="margin-bottom: 20px;">
+                <label>📂 入力済み JSON を読み込む</label>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <button type="button" class="btn-secondary" onclick="openJsonImportPicker()">
+                        JSONファイルを選択
+                    </button>
+                    <input type="file" id="jsonImportInput" accept=".json,application/json" style="display: none;" onchange="importInputJson(event)">
+                    <span id="jsonImportStatus" style="font-size: 13px; color: #666;">未選択</span>
+                </div>
+            </div>
+
             <form id="timetableForm">
                 <!-- イベント日数設定 -->
                 <div class="form-group">
@@ -538,6 +549,117 @@
             generatedTimetableMulti: null,
             generatedShift: null
         };
+        const API_BASE_CANDIDATES = [
+            'http://127.0.0.1:5000',
+            'http://localhost:5000'
+        ];
+
+        async function fetchWithApiFallback(path, options) {
+            let lastError = null;
+            for (const baseUrl of API_BASE_CANDIDATES) {
+                try {
+                    return await fetch(`${baseUrl}${path}`, options);
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+            throw lastError || new Error('API endpoint is unreachable');
+        }
+
+        function openJsonImportPicker() {
+            document.getElementById('jsonImportInput').click();
+        }
+
+        function normalizeDaysFromJson(data) {
+            if (Array.isArray(data.days) && data.days.length > 0) {
+                return data.days.map((day, index) => ({
+                    dayNumber: day.day_number || index + 1,
+                    startTime: day.start_time || '11:30',
+                    bands: Array.isArray(day.bands) ? day.bands : [],
+                    rehearsalMinutes: parseInt(day.rh_mins) || 15,
+                    performanceMinutes: parseInt(day.act_mins) || 10,
+                    breakDuration: parseInt(day.break_duration) || 60,
+                    breakAfterBand: day.break_after_band || ''
+                }));
+            }
+
+            if (Array.isArray(data.bands)) {
+                return [{
+                    dayNumber: 1,
+                    startTime: data.start_time || '11:30',
+                    bands: data.bands,
+                    rehearsalMinutes: parseInt(data.rh_mins) || 15,
+                    performanceMinutes: parseInt(data.act_mins) || 10,
+                    breakDuration: parseInt(data.break_duration) || 60,
+                    breakAfterBand: data.break_after_band || ''
+                }];
+            }
+
+            return [];
+        }
+
+        function normalizeMembersFromJson(data) {
+            if (!Array.isArray(data.members)) return [];
+            return data.members.map(member => ({
+                id: Date.now() + Math.floor(Math.random() * 100000),
+                name: member.name || '',
+                skill_desk: parseInt(member.skill_desk) || 3,
+                skill_stage: parseInt(member.skill_stage) || 3,
+                count: parseInt(member.count) || 0,
+                ng_bands: Array.isArray(member.ng_bands) ? member.ng_bands : [],
+                ng_times: Array.isArray(member.ng_times)
+                    ? { day_1: member.ng_times }
+                    : ((member.ng_times && typeof member.ng_times === 'object') ? member.ng_times : {}),
+                req_bands: Array.isArray(member.req_bands) ? member.req_bands : []
+            }));
+        }
+
+        function applyImportedInputData(data) {
+            const days = normalizeDaysFromJson(data);
+            if (days.length === 0) {
+                throw new Error('days または bands を含む入力JSONを指定してください');
+            }
+
+            appData.days = days;
+            appData.numDays = parseInt(data.num_days) || days.length;
+            document.getElementById('numDays').value = appData.numDays;
+
+            const importedMembers = normalizeMembersFromJson(data);
+            appData.members = importedMembers;
+
+            // 以前の生成結果はクリア
+            appData.generatedTimetableMulti = null;
+            appData.generatedShift = null;
+
+            renderDayTabs();
+            updatePage2Options();
+            updateMemberNgTimesUI();
+            renderMembersList();
+            updateSummary();
+        }
+
+        async function importInputJson(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('jsonImportStatus');
+            status.textContent = `読み込み中: ${file.name}`;
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                applyImportedInputData(data);
+                status.textContent = `読み込み完了: ${file.name}`;
+                alert('JSONの入力データを反映しました');
+            } catch (error) {
+                console.error('JSON読み込みエラー:', error);
+                status.textContent = `読み込み失敗: ${file.name}`;
+                alert(`JSON読み込みに失敗しました: ${error.message}`);
+            } finally {
+                // 同じファイルを再選択しても onchange が発火するようにする
+                event.target.value = '';
+            }
+        }
 
         // ページナビゲーション
         function goToPage(pageNumber) {
@@ -876,9 +998,13 @@
             }
 
             container.innerHTML = appData.members.map(member => {
-                const ngTimesDisplay = Object.entries(member.ng_times).map(([day, times]) => 
-                    `<div>${day}: ${times.join('、')}</div>`
-                ).join('');
+                const ngTimesByDay = Array.isArray(member.ng_times)
+                    ? { day_1: member.ng_times }
+                    : (member.ng_times || {});
+                const ngTimesDisplay = Object.entries(ngTimesByDay).map(([day, times]) => {
+                    const safeTimes = Array.isArray(times) ? times : [];
+                    return `<div>${day}: ${safeTimes.join('、')}</div>`;
+                }).join('');
 
                 return `
                     <div class="member-card">
@@ -916,7 +1042,7 @@
         // ページ3: シフト生成・プレビュー
         async function callPythonBackend(payload) {
             try {
-                const response = await fetch('http://localhost:5000/api/generate-shift-multi-day', {
+                const response = await fetchWithApiFallback('/api/generate-shift-multi-day', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -925,13 +1051,30 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    let errorMessage = `HTTP error! status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.error) {
+                            errorMessage = errorData.error;
+                        }
+                    } catch (parseError) {
+                        // JSONでないレスポンスは既定メッセージのまま
+                    }
+                    throw new Error(errorMessage);
                 }
 
                 return await response.json();
             } catch (error) {
                 console.error('Python バックエンド通信エラー:', error);
-                alert('Python サーバーとの通信に失敗しました。\nサーバーが起動していることを確認してください。\n\n起動コマンド: python app.py');
+                const isNetworkError =
+                    error.message.includes('Failed to fetch') ||
+                    error.message.includes('NetworkError') ||
+                    error.message.includes('ERR_CONNECTION');
+                if (isNetworkError) {
+                    alert('Python サーバーとの通信に失敗しました。\nサーバーが起動していることを確認してください。\n\n起動コマンド: python app.py');
+                } else {
+                    alert(`シフト生成エラー: ${error.message}`);
+                }
                 return null;
             }
         }
@@ -1116,7 +1259,7 @@
                     members: appData.members
                 };
 
-                const response = await fetch('http://localhost:5000/api/download-excel', {
+                const response = await fetchWithApiFallback('/api/download-excel', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

@@ -1,0 +1,158 @@
+{
+  "start_time": "10:30",
+  "bands": [
+    "LUNA SEA(D)",
+    "PK shanpoo",
+    "BUMP(コピー)",
+    "アジカン(コピー)",
+    "ELLEGARDEN(コピー)",
+    "RADWIMPS(コピー)",
+    "ミスチル(コピー)",
+    "スピッツ(コピー)",
+    "サカナクション(コピー)",
+    "Official髭男dism(コピー)",
+    "YOASOBI(コピー)",
+    "King Gnu(コピー)"
+  ],
+  "rh_mins": 15,
+  "act_mins": 10,
+  "break_duration": 45,
+  "break_after_band": "RADWIMPS(コピー)",
+  "members": [
+    {
+      "name": "みらい",
+      "skill_desk": 5,
+      "skill_stage": 4,
+      "count": 0,
+      "ng_bands": ["LUNA SEA(D)", "PK shanpoo"],
+      "ng_times": ["10:30-10:55", "14:50-15:15"],
+      "req_bands": ["BUMP(コピー)", "YOASOBI(コピー)"]
+    },
+    {
+      "name": "るい",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["13:00-13:25"],
+      "req_bands": ["スピッツ(コピー)"]
+    },
+    {
+      "name": "先輩A",
+      "skill_desk": 5,
+      "skill_stage": 5,
+      "count": 0,
+      "ng_bands": ["King Gnu(コピー)"],
+      "ng_times": [],
+      "req_bands": []
+    },
+    {
+      "name": "後輩B",
+      "skill_desk": 2,
+      "skill_stage": 2,
+      "count": 0,
+      "ng_bands": ["ELLEGARDEN(コピー)"],
+      "ng_times": ["12:35-13:00"],
+      "req_bands": ["LUNA SEA(D)"]
+    },
+    {
+      "name": "後輩C",
+      "skill_desk": 1,
+      "skill_stage": 2,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["11:20-11:45"],
+      "req_bands": []
+    },
+    {
+      "name": "後輩D",
+      "skill_desk": 2,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": ["RADWIMPS(コピー)"],
+      "ng_times": [],
+      "req_bands": ["ミスチル(コピー)"]
+    },
+    {
+      "name": "後輩E",
+      "skill_desk": 3,
+      "skill_stage": 2,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["15:35-16:00"],
+      "req_bands": []
+    },
+    {
+      "name": "先輩B",
+      "skill_desk": 4,
+      "skill_stage": 5,
+      "count": 0,
+      "ng_bands": ["BUMP(コピー)"],
+      "ng_times": [],
+      "req_bands": ["Official髭男dism(コピー)"]
+    },
+    {
+      "name": "先輩C",
+      "skill_desk": 4,
+      "skill_stage": 4,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["10:55-11:20"],
+      "req_bands": ["サカナクション(コピー)"]
+    },
+    {
+      "name": "サポート1",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": ["YOASOBI(コピー)"],
+      "ng_times": [],
+      "req_bands": []
+    },
+    {
+      "name": "サポート2",
+      "skill_desk": 2,
+      "skill_stage": 4,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["14:00-14:25"],
+      "req_bands": ["PK shanpoo"]
+    },
+    {
+      "name": "サポート3",
+      "skill_desk": 1,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": ["スピッツ(コピー)"],
+      "ng_times": [],
+      "req_bands": []
+    },
+    {
+      "name": "サポート4",
+      "skill_desk": 4,
+      "skill_stage": 2,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["16:00-16:25"],
+      "req_bands": ["King Gnu(コピー)"]
+    },
+    {
+      "name": "サポート5",
+      "skill_desk": 2,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": ["ミスチル(コピー)"],
+      "ng_times": [],
+      "req_bands": []
+    },
+    {
+      "name": "サポート6",
+      "skill_desk": 5,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": ["12:10-12:35"],
+      "req_bands": ["RADWIMPS(コピー)"]
+    }
+  ]
+}
