@@ -1,0 +1,20 @@
+{
+  "start_time": "11:30",
+  "bands": [
+    "test_band_1"
+  ],
+  "rh_mins": 15,
+  "act_mins": 10,
+  "break_duration": 60,
+  "break_after_band": "",
+  "members": [
+    {
+      "name": "不正データ例",
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": [],
+      "req_bands": []
+    }
+  ]
+}
