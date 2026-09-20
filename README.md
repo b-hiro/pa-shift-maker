@@ -4,7 +4,20 @@
 
 ライブイベントの PA（音響スタッフ）シフトを自動生成するツールです。バンドのリハーサル・本番スケジュールとメンバーのスキル・条件を入力すると、最適なシフト配置を自動計算します。
 
-## 🆕 主な改善点（v13）
+## 🆕 主な改善点（v14）
+
+### 開発・テスト
+
+- **ハード制約の自動テスト（pytest）を追加**: シフト生成アルゴリズムは、一つの偏りを直すと別ケースが崩れやすいため、「生成結果がこの表と完全一致すること」ではなく「ハード制約を破っていないこと」を `pytest` で固定しました。成功ケースはランダム揺れを踏まえて複数回生成し、失敗ケース（リーダー不在）は正しく不成立になることも確認します。
+  - 卓・ステージに必ずリーダーがいる
+  - 同一人物が同じバンドで卓とステージ両方に入らない
+  - NG時間／出演バンド（前後バンド含む）には入らない
+  - `*_limit_per_member` の最大回数を超えない
+  - リーダー不足時は不成立になる
+  - 複数日でも配置回数が通算される
+- 実行方法: 依存追加後にリポジトリ直下で `python -m pytest`（詳細は下記「🧪 自動テスト」）
+
+## 主な改善点（v13）
 
 ### バックエンド（app.py） / フロントエンド（templates/index.html）
 
@@ -335,10 +348,14 @@ python app.py
 
 ```
 pa-shift/
-├── フロントエンド.html            # フロント UI
+├── templates/index.html          # フロント UI
 ├── app.py                        # Flask バックエンド
 ├── proto-type.py                 # 参考用（元のスクリプト）
-├── requirements.txt              # Python 依存パッケージ
+├── requirements.txt              # Python 依存パッケージ（pytest 含む）
+├── pytest.ini                    # pytest 設定（tests/ を探索）
+├── tests/
+│   ├── helpers.py                # 制約チェック用ヘルパー
+│   └── test_constraints.py       # ハード制約の自動テスト
 ├── pa_shift_test.csv             # テスト用 CSV
 ├── input_template.json           # 入力JSONの空欄テンプレート
 ├── test_input_single_day.json    # /api/generate-shift の動作確認用サンプル
@@ -346,6 +363,17 @@ pa-shift/
 ├── test_input_invalid_member.json # バリデーションエラー確認用サンプル（skill_desk が欠けている）
 └── README.md                     # このファイル
 ```
+
+## 🧪 自動テスト
+
+アルゴリズムを直したあとに、ハード制約を壊していないかを手元で確認するための検査です。**アプリ利用時には動きません**（開発時にターミナルで実行します）。
+
+```bash
+pip install -r requirements.txt
+python -m pytest
+```
+
+成功すると `6 passed` のように表示されます。失敗した場合は、どの制約が破られたかが Assertion メッセージで分かります。
 
 ## 🔄 Python に変更を加えるには
 
