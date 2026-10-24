@@ -22,6 +22,7 @@
       "skill_desk": 3,
       "skill_stage": 1,
       "count": 0,
+      "target_days": null,
       "ng_bands": [],
       "ng_times": {
         "day_1": []
@@ -34,6 +35,7 @@
       "skill_desk": 1,
       "skill_stage": 3,
       "count": 0,
+      "target_days": null,
       "ng_bands": [],
       "ng_times": {
         "day_1": []
@@ -46,6 +48,7 @@
       "skill_desk": 3,
       "skill_stage": 3,
       "count": 0,
+      "target_days": null,
       "ng_bands": [],
       "ng_times": {
         "day_1": []
@@ -58,6 +61,7 @@
       "skill_desk": 1,
       "skill_stage": 1,
       "count": 0,
+      "target_days": null,
       "ng_bands": [],
       "ng_times": {
         "day_1": []
@@ -70,6 +74,7 @@
       "skill_desk": 3,
       "skill_stage": 1,
       "count": 0,
+      "target_days": null,
       "ng_bands": [],
       "ng_times": {
         "day_1": []

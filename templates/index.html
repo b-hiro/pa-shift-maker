@@ -592,6 +592,16 @@
                     </div>
                 </div>
 
+                <!-- 出勤日数の目安（複数日のとき・ソフト制約） -->
+                <div class="form-group">
+                    <label>📅 出勤日数の目安（複数日のとき・任意）</label>
+                    <select id="memberTargetDays"></select>
+                    <p style="font-size: 12px; color: #667eea; margin-top: 6px; line-height: 1.6;">
+                        指定すると、この人は全日程に散らさず、その日数にまとめて配置します（できれば連続した日）。
+                        目安なので、人手が足りない日は超えて入ることがあります。空欄なら全日程に均等に散らします。
+                    </p>
+                </div>
+
                 <!-- 出演バンド（選択肢から選ぶ） -->
                 <div class="form-group">
                     <label>🚫 出演バンド</label>
@@ -973,6 +983,7 @@
                     ? String(member.grade) : null,
                 skill_desk: parseInt(member.skill_desk) || 3,
                 skill_stage: parseInt(member.skill_stage) || 3,
+                target_days: (parseInt(member.target_days) >= 1) ? parseInt(member.target_days) : null,
                 count: parseInt(member.count) || 0,
                 ng_bands: Array.isArray(member.ng_bands) ? member.ng_bands : [],
                 ng_times: Array.isArray(member.ng_times)
@@ -1664,6 +1675,8 @@
             const gradeValue = document.getElementById('memberGrade').value.trim();
             const skillDesk = parseInt(document.getElementById('skillDesk').value) || 3;
             const skillStage = parseInt(document.getElementById('skillStage').value) || 3;
+            const targetDaysValue = document.getElementById('memberTargetDays').value.trim();
+            const targetDays = targetDaysValue === '' ? null : parseInt(targetDaysValue);
 
             // チェックボックスから選択された値を取得
             const ngBands = Array.from(document.querySelectorAll('.ng-band-checkbox:checked'))
@@ -1708,6 +1721,7 @@
                         grade: gradeValue || null,
                         skill_desk: skillDesk,
                         skill_stage: skillStage,
+                        target_days: targetDays,
                         ng_bands: ngBands,
                         ng_times: ngTimesPerDay,
                         req_bands: reqBands
@@ -1722,6 +1736,7 @@
                     grade: gradeValue || null,
                     skill_desk: skillDesk,
                     skill_stage: skillStage,
+                    target_days: targetDays,
                     count: 0,
                     ng_bands: ngBands,
                     ng_times: ngTimesPerDay,
@@ -1749,6 +1764,7 @@
             document.getElementById('memberGrade').value = member.grade || '';
             document.getElementById('skillDesk').value = member.skill_desk;
             document.getElementById('skillStage').value = member.skill_stage;
+            setSelectValue('memberTargetDays', member.target_days);
 
             document.querySelectorAll('.ng-band-checkbox').forEach(checkbox => {
                 checkbox.checked = member.ng_bands.includes(checkbox.value);
@@ -1787,6 +1803,7 @@
             document.getElementById('memberGrade').value = '';
             document.getElementById('skillDesk').value = '3';
             document.getElementById('skillStage').value = '3';
+            setSelectValue('memberTargetDays', '');
 
             document.querySelectorAll('.ng-band-checkbox, .req-band-checkbox').forEach(checkbox => {
                 checkbox.checked = false;
@@ -1841,6 +1858,7 @@
                         <div class="member-info">
                             <div><strong>卓スキル:</strong> ${member.skill_desk}/5</div>
                             <div><strong>ステージスキル:</strong> ${member.skill_stage}/5</div>
+                            <div><strong>出勤日数の目安:</strong> ${member.target_days ? `${member.target_days}日にまとめる` : '指定なし（全日程に散らす）'}</div>
                             <div><strong>NG バンド:</strong> ${member.ng_bands.length > 0 ? member.ng_bands.join(', ') : 'なし'}</div>
                             <div><strong>NG 時間:</strong> ${ngTimesDisplay || 'なし'}</div>
                             <div><strong>希望バンド:</strong> ${member.req_bands.length > 0 ? member.req_bands.join(', ') : 'なし'}</div>
@@ -1854,6 +1872,9 @@
         function initStaticSelects() {
             document.getElementById('numDays').innerHTML =
                 buildNumberOptions(1, rangeValues(1, 10, 1));
+
+            document.getElementById('memberTargetDays').innerHTML =
+                buildNumberOptions('', rangeValues(1, 10, 1), '指定なし（全日程に散らす）');
 
             document.getElementById('deskMaxMembers').innerHTML =
                 buildNumberOptions('', rangeValues(1, 20, 1), 'デフォルト: 2');
