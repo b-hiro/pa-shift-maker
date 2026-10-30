@@ -349,6 +349,104 @@
             accent-color: #667eea;
         }
 
+        /* メンバー取り込み（CSV/Excel）パネル */
+        .import-panel {
+            border: 2px dashed #b9c3f5;
+            border-radius: 10px;
+            background: #f5f7ff;
+            padding: 16px;
+            margin: 15px 0 25px;
+        }
+
+        .import-panel h3 {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .import-scroll {
+            overflow: auto;
+            max-height: 320px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #fff;
+            margin: 8px 0 14px;
+        }
+
+        .import-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .import-table th,
+        .import-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #eee;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .import-table thead th {
+            position: sticky;
+            top: 0;
+            background: #eef0fb;
+            z-index: 1;
+        }
+
+        .import-panel select {
+            width: auto;
+            padding: 4px 6px;
+            border-width: 1px;
+            font-size: 12px;
+        }
+
+        .import-table td.import-memo {
+            white-space: normal;
+            min-width: 260px;
+        }
+
+        .import-row-ok { background: #f3fbf4; }
+        .import-row-warn { background: #fff8e1; }
+        .import-row-error { background: #fdecea; color: #b71c1c; }
+
+        .import-badge {
+            display: inline-block;
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .import-badge.ok { background: #c8e6c9; color: #1b5e20; }
+        .import-badge.warn { background: #ffe082; color: #7a5200; }
+        .import-badge.error { background: #ef9a9a; color: #7f0000; }
+
+        .import-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            font-size: 13px;
+            margin: 8px 0;
+        }
+
+        .import-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 0;
+            font-weight: normal;
+        }
+
+        .import-options select {
+            font-size: 13px;
+        }
+
+        .import-options input[type="checkbox"] {
+            flex: none;
+        }
+
         .member-info {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -556,6 +654,22 @@
                 各メンバーの名前、卓・ステージスキル、NG条件などを設定します。複数メンバーを追加できます。
             </div>
 
+            <!-- CSV / Excel からのメンバー取り込み -->
+            <div class="import-panel" id="memberImportPanel">
+                <h3>📥 CSV / Excel からメンバーをまとめて読み込む</h3>
+                <p style="font-size: 12px; color: #555; line-height: 1.7;">
+                    1行に1人。列は <strong>A=名前 / B=学年 / C=属性（例: お助け枠） / D=卓スキル / E=ステージスキル</strong> の想定です。
+                    読み込んだあと、どの列が何にあたるかを画面で確認・変更してから取り込みます（NG・希望バンド・出勤日数の目安は取り込み後に設定します）。
+                </p>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
+                    <button type="button" class="btn-secondary" onclick="openMemberFilePicker()">📂 ファイルを選ぶ（.csv / .xlsx）</button>
+                    <span id="memberImportFileLabel" style="font-size: 12px; color: #666;"></span>
+                </div>
+                <input type="file" id="memberImportInput" accept=".csv,.tsv,.txt,.xlsx,.xlsm" style="display: none;" onchange="handleMemberFileSelected(event)">
+                <div id="memberImportMessage" style="font-size: 13px; margin-top: 8px;"></div>
+                <div id="memberImportBody" style="display: none;"></div>
+            </div>
+
             <form id="memberForm">
                 <!-- メンバー追加セクション -->
                 <div class="grid-2">
@@ -567,6 +681,11 @@
                         <label>🎓 学年（任意）</label>
                         <input type="text" id="memberGrade" placeholder="例：1">
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label>🏷️ 属性（任意・表示用）</label>
+                    <input type="text" id="memberTag" placeholder="例：お助け枠">
                 </div>
 
                 <div class="grid-2">
@@ -981,6 +1100,7 @@
                 name: member.name || '',
                 grade: (member.grade !== undefined && member.grade !== null && member.grade !== '')
                     ? String(member.grade) : null,
+                tag: (typeof member.tag === 'string' && member.tag.trim() !== '') ? member.tag.trim() : null,
                 skill_desk: parseInt(member.skill_desk) || 3,
                 skill_stage: parseInt(member.skill_stage) || 3,
                 target_days: (parseInt(member.target_days) >= 1) ? parseInt(member.target_days) : null,
@@ -1673,6 +1793,7 @@
         function addMember() {
             const name = document.getElementById('memberName').value.trim();
             const gradeValue = document.getElementById('memberGrade').value.trim();
+            const tagValue = document.getElementById('memberTag').value.trim();
             const skillDesk = parseInt(document.getElementById('skillDesk').value) || 3;
             const skillStage = parseInt(document.getElementById('skillStage').value) || 3;
             const targetDaysValue = document.getElementById('memberTargetDays').value.trim();
@@ -1719,6 +1840,7 @@
                         ...appData.members[index],
                         name: name,
                         grade: gradeValue || null,
+                        tag: tagValue || null,
                         skill_desk: skillDesk,
                         skill_stage: skillStage,
                         target_days: targetDays,
@@ -1734,6 +1856,7 @@
                     id: Date.now(),
                     name: name,
                     grade: gradeValue || null,
+                    tag: tagValue || null,
                     skill_desk: skillDesk,
                     skill_stage: skillStage,
                     target_days: targetDays,
@@ -1762,6 +1885,7 @@
 
             document.getElementById('memberName').value = member.name || '';
             document.getElementById('memberGrade').value = member.grade || '';
+            document.getElementById('memberTag').value = member.tag || '';
             document.getElementById('skillDesk').value = member.skill_desk;
             document.getElementById('skillStage').value = member.skill_stage;
             setSelectValue('memberTargetDays', member.target_days);
@@ -1801,6 +1925,7 @@
         function resetMemberForm() {
             document.getElementById('memberName').value = '';
             document.getElementById('memberGrade').value = '';
+            document.getElementById('memberTag').value = '';
             document.getElementById('skillDesk').value = '3';
             document.getElementById('skillStage').value = '3';
             setSelectValue('memberTargetDays', '');
@@ -1816,6 +1941,487 @@
             if (submitBtn) submitBtn.textContent = '+ メンバーを追加';
             const cancelBtn = document.getElementById('memberCancelEditBtn');
             if (cancelBtn) cancelBtn.style.display = 'none';
+        }
+
+        // ===== メンバー取り込み（CSV / Excel）=====
+        // 流れ: ファイル選択 → サーバーで行×列の表に変換 → 列の紐づけとプレビュー（ここで検証）→ 確定。
+        // 検証でエラーになった行は取り込まれず、確定するまで appData.members は一切変更されない。
+
+        function escapeHtml(value) {
+            const table = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+            return String(value ?? '').replace(/[&<>"']/g, ch => table[ch]);
+        }
+
+        const MEMBER_IMPORT_FIELDS = [
+            { key: 'name', label: '名前' },
+            { key: 'grade', label: '学年' },
+            { key: 'tag', label: '属性' },
+            { key: 'skill_desk', label: '卓スキル' },
+            { key: 'skill_stage', label: 'ステージスキル' }
+        ];
+        // 見出しがなかった場合の既定の列割り当て（A,B,C,D,E の順）
+        const MEMBER_IMPORT_DEFAULT_ORDER = ['name', 'grade', 'tag', 'skill_desk', 'skill_stage'];
+        // 見出し行から列を自動判定するためのキーワード
+        const MEMBER_IMPORT_HEADER_KEYWORDS = {
+            name: ['名前', '氏名', 'メンバー', 'name'],
+            grade: ['学年', 'grade'],
+            tag: ['属性', 'タグ', '枠', 'tag'],
+            skill_desk: ['卓', 'desk'],
+            skill_stage: ['ステージ', 'stage']
+        };
+
+        let memberImportState = null;
+
+        function setMemberImportMessage(text, color) {
+            const el = document.getElementById('memberImportMessage');
+            el.textContent = text || '';
+            el.style.color = color || '#555';
+        }
+
+        function openMemberFilePicker() {
+            document.getElementById('memberImportInput').click();
+        }
+
+        async function handleMemberFileSelected(event) {
+            const input = event.target;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            setMemberImportMessage('読み込み中...', '#666');
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const response = await fetchWithApiFallback('/api/parse-members-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                let result = null;
+                try {
+                    result = await response.json();
+                } catch (parseError) {
+                    result = null;
+                }
+                if (!response.ok || !result || result.error) {
+                    throw new Error((result && result.error) || `読み込みに失敗しました（HTTP ${response.status}）`);
+                }
+                setMemberImportMessage('', '#555');
+                startMemberImport(file.name, result);
+            } catch (error) {
+                cancelMemberImport();
+                const message = error instanceof TypeError
+                    ? 'サーバーに接続できませんでした（python app.py が起動しているか確認してください）'
+                    : error.message;
+                setMemberImportMessage('❌ ' + message, '#c62828');
+            } finally {
+                input.value = '';
+            }
+        }
+
+        function startMemberImport(filename, result) {
+            const firstWithData = result.sheets.findIndex(sheet => sheet.rows.some(row => row.some(cell => cell !== '')));
+            memberImportState = {
+                filename: filename,
+                encoding: result.encoding,
+                sheets: result.sheets,
+                sheetIndex: Math.max(0, firstWithData),
+                hasHeader: false,
+                mapping: [],
+                emptySkillPolicy: 'error',
+                rowActions: {}
+            };
+            resetMemberImportMapping();
+            renderMemberImport();
+        }
+
+        function cancelMemberImport() {
+            memberImportState = null;
+            renderMemberImport();
+        }
+
+        function memberImportColumnCount(sheet) {
+            const widest = sheet.rows.reduce((max, row) => Math.max(max, row.length), 0);
+            return Math.max(widest, MEMBER_IMPORT_DEFAULT_ORDER.length);
+        }
+
+        function memberImportColumnLetter(index) {
+            const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            return index < 26 ? letters[index] : letters[Math.floor(index / 26) - 1] + letters[index % 26];
+        }
+
+        // シートの先頭行が見出しかどうかを判定し、列の初期割り当てを決める
+        function resetMemberImportMapping() {
+            const state = memberImportState;
+            const sheet = state.sheets[state.sheetIndex];
+            const columnCount = memberImportColumnCount(sheet);
+            const firstRow = sheet.rows.find(row => row.some(cell => cell !== '')) || [];
+
+            const guessed = new Array(columnCount).fill('');
+            let matched = 0;
+            firstRow.forEach((cell, index) => {
+                const text = String(cell).normalize('NFKC').toLowerCase();
+                if (!text) return;
+                for (const [key, words] of Object.entries(MEMBER_IMPORT_HEADER_KEYWORDS)) {
+                    if (!guessed.includes(key) && words.some(word => text.includes(word))) {
+                        guessed[index] = key;
+                        matched++;
+                        break;
+                    }
+                }
+            });
+
+            if (guessed.includes('name') || matched >= 2) {
+                state.hasHeader = true;
+                state.mapping = guessed;
+            } else {
+                state.hasHeader = false;
+                state.mapping = new Array(columnCount).fill('');
+                MEMBER_IMPORT_DEFAULT_ORDER.forEach((key, index) => {
+                    state.mapping[index] = key;
+                });
+            }
+            state.rowActions = {};
+        }
+
+        // 空行と見出し行を除いた、取り込み対象の行（元ファイルの行番号つき）
+        function getMemberImportDataRows() {
+            const state = memberImportState;
+            const sheet = state.sheets[state.sheetIndex];
+            const rows = [];
+            let headerPending = state.hasHeader;
+            sheet.rows.forEach((cells, index) => {
+                if (cells.every(cell => cell === '')) return;
+                if (headerPending) {
+                    headerPending = false;
+                    return;
+                }
+                rows.push({ rowNumber: index + 1, cells: cells });
+            });
+            return rows;
+        }
+
+        // スキル値の解釈。全角数字は半角にし、1〜5 の整数だけを有効とする
+        function parseImportSkill(rawText) {
+            const text = String(rawText ?? '').normalize('NFKC').trim();
+            if (text === '') return { empty: true };
+            if (!/^\d+(\.0+)?$/.test(text)) return { invalid: true };
+            const value = parseInt(text, 10);
+            if (value < 1 || value > 5) return { invalid: true };
+            return { value: value };
+        }
+
+        // 現在の紐づけで各行を解釈・検証する（副作用なし）。value が undefined の項目は「現状維持／既定値」。
+        function evaluateMemberImportRows() {
+            const state = memberImportState;
+            const columnOf = key => state.mapping.indexOf(key);
+            const cellText = (cells, key) => {
+                const index = columnOf(key);
+                return index === -1 ? null : String(cells[index] ?? '').trim();
+            };
+            const existingByName = new Map(appData.members.map(member => [member.name, member]));
+            const seenNames = new Map();
+
+            return getMemberImportDataRows().map(row => {
+                const errors = [];
+                const warnings = [];
+
+                const rawName = cellText(row.cells, 'name');
+                const name = rawName === null ? '' : rawName;
+                if (name === '') {
+                    errors.push('名前が空です');
+                } else if (seenNames.has(name)) {
+                    errors.push(`行${seenNames.get(name)}と同じ名前です（後の行は取り込みません）`);
+                } else {
+                    seenNames.set(name, row.rowNumber);
+                }
+
+                const existing = name !== '' ? (existingByName.get(name) || null) : null;
+                if (existing && errors.length === 0) {
+                    warnings.push('登録済みの同名メンバーがいます');
+                }
+
+                const gradeRaw = cellText(row.cells, 'grade');
+                const tagRaw = cellText(row.cells, 'tag');
+                const grade = gradeRaw === null ? undefined : (gradeRaw.normalize('NFKC') || null);
+                const tag = tagRaw === null ? undefined : (tagRaw || null);
+
+                const skills = {};
+                [['skill_desk', '卓スキル'], ['skill_stage', 'ステージスキル']].forEach(([key, label]) => {
+                    const raw = cellText(row.cells, key);
+                    if (raw === null) {
+                        // 列が未割り当て: 既存メンバーは現状維持、新規は標準(3)
+                        skills[key] = existing ? undefined : 3;
+                        return;
+                    }
+                    const parsed = parseImportSkill(raw);
+                    if (parsed.invalid) {
+                        errors.push(`${label}は1〜5の整数で入力してください（入力値: ${raw}）`);
+                    } else if (parsed.empty) {
+                        if (existing) {
+                            skills[key] = undefined;
+                        } else if (state.emptySkillPolicy === 'error') {
+                            errors.push(`${label}が空欄です`);
+                        } else {
+                            const filled = parseInt(state.emptySkillPolicy, 10);
+                            skills[key] = filled;
+                            warnings.push(`${label}が空欄のため${filled}で補います`);
+                        }
+                    } else {
+                        skills[key] = parsed.value;
+                    }
+                });
+
+                const status = errors.length > 0 ? 'error' : (warnings.length > 0 ? 'warn' : 'ok');
+                return {
+                    rowNumber: row.rowNumber,
+                    name: name,
+                    grade: grade,
+                    tag: tag,
+                    skill_desk: skills.skill_desk,
+                    skill_stage: skills.skill_stage,
+                    existing: existing,
+                    action: existing ? (state.rowActions[row.rowNumber] || 'overwrite') : 'add',
+                    status: status,
+                    messages: errors.concat(warnings)
+                };
+            });
+        }
+
+        function onMemberImportSheetChange(value) {
+            memberImportState.sheetIndex = parseInt(value, 10) || 0;
+            resetMemberImportMapping();
+            renderMemberImport();
+        }
+
+        function onMemberImportHeaderToggle(checked) {
+            memberImportState.hasHeader = checked;
+            memberImportState.rowActions = {};
+            renderMemberImport();
+        }
+
+        function onMemberImportMappingChange(columnIndex, key) {
+            const state = memberImportState;
+            if (key) {
+                // 同じ項目を複数列に割り当てられないよう、他の列の割り当てを外す
+                state.mapping = state.mapping.map(current => (current === key ? '' : current));
+            }
+            state.mapping[columnIndex] = key;
+            renderMemberImport();
+        }
+
+        function onMemberImportPolicyChange(value) {
+            memberImportState.emptySkillPolicy = value;
+            renderMemberImport();
+        }
+
+        function onMemberImportRowAction(rowNumber, action) {
+            memberImportState.rowActions[rowNumber] = action;
+            renderMemberImport();
+        }
+
+        function renderMemberImport() {
+            const body = document.getElementById('memberImportBody');
+            const fileLabel = document.getElementById('memberImportFileLabel');
+            const state = memberImportState;
+
+            if (!state) {
+                body.style.display = 'none';
+                body.innerHTML = '';
+                fileLabel.textContent = '';
+                return;
+            }
+
+            const sheet = state.sheets[state.sheetIndex];
+            const columnCount = memberImportColumnCount(sheet);
+            const encodingLabel = state.encoding
+                ? `（文字コード: ${state.encoding === 'utf-8-sig' ? 'UTF-8' : (state.encoding === 'cp932' ? 'Shift_JIS' : state.encoding)}）`
+                : '';
+            fileLabel.textContent = `${state.filename} ${encodingLabel}`;
+
+            // 1) 列の紐づけ（元ファイルの先頭数行を見ながら選ぶ）
+            const optionHtml = selected => ['<option value="">（使わない）</option>']
+                .concat(MEMBER_IMPORT_FIELDS.map(field =>
+                    `<option value="${field.key}" ${field.key === selected ? 'selected' : ''}>${field.label}</option>`))
+                .join('');
+
+            const rawRows = [];
+            let headerPending = state.hasHeader;
+            sheet.rows.forEach((cells, index) => {
+                if (rawRows.length >= 6 || cells.every(cell => cell === '')) return;
+                rawRows.push({ rowNumber: index + 1, cells: cells, isHeader: headerPending });
+                headerPending = false;
+            });
+
+            const mappingHead = Array.from({ length: columnCount }, (_, i) =>
+                `<th>${memberImportColumnLetter(i)}列<br><select onchange="onMemberImportMappingChange(${i}, this.value)">${optionHtml(state.mapping[i] || '')}</select></th>`
+            ).join('');
+            const mappingRows = rawRows.map(row => `
+                <tr style="${row.isHeader ? 'background:#eef0fb; font-weight:700;' : ''}">
+                    <td style="color:#999;">${row.rowNumber}${row.isHeader ? '（見出し）' : ''}</td>
+                    ${Array.from({ length: columnCount }, (_, i) => `<td>${escapeHtml(row.cells[i] ?? '')}</td>`).join('')}
+                </tr>`).join('');
+
+            // 2) 取り込み結果のプレビュー
+            const results = evaluateMemberImportRows();
+            const counts = { add: 0, overwrite: 0, skip: 0, error: 0 };
+            results.forEach(r => {
+                if (r.status === 'error') counts.error++;
+                else if (r.existing) counts[r.action === 'skip' ? 'skip' : 'overwrite']++;
+                else counts.add++;
+            });
+            const importable = counts.add + counts.overwrite;
+            const hasNameColumn = state.mapping.includes('name');
+
+            const badgeLabel = { ok: 'OK', warn: '要確認', error: '除外' };
+            const showSkill = (value, hasExisting) => {
+                if (value === undefined) return hasExisting ? '<span style="color:#999;">現状維持</span>' : '-';
+                return value;
+            };
+            const showText = (value, hasExisting) => {
+                if (value === undefined) return hasExisting ? '<span style="color:#999;">現状維持</span>' : '-';
+                return value === null ? '-' : escapeHtml(value);
+            };
+            const resultRows = results.map(r => {
+                let actionCell;
+                if (r.status === 'error') {
+                    actionCell = '取り込まない';
+                } else if (r.existing) {
+                    actionCell = `<select onchange="onMemberImportRowAction(${r.rowNumber}, this.value)">
+                        <option value="overwrite" ${r.action === 'overwrite' ? 'selected' : ''}>上書き</option>
+                        <option value="skip" ${r.action === 'skip' ? 'selected' : ''}>飛ばす</option>
+                    </select>`;
+                } else {
+                    actionCell = '新規追加';
+                }
+                return `
+                    <tr class="import-row-${r.status}">
+                        <td>${r.rowNumber}</td>
+                        <td><span class="import-badge ${r.status}">${badgeLabel[r.status]}</span></td>
+                        <td>${escapeHtml(r.name)}</td>
+                        <td>${showText(r.grade, r.existing)}</td>
+                        <td>${showText(r.tag, r.existing)}</td>
+                        <td>${showSkill(r.skill_desk, r.existing)}</td>
+                        <td>${showSkill(r.skill_stage, r.existing)}</td>
+                        <td>${actionCell}</td>
+                        <td class="import-memo">${r.messages.map(escapeHtml).join(' / ')}</td>
+                    </tr>`;
+            }).join('');
+
+            const notices = [];
+            if (!hasNameColumn) {
+                notices.push('「名前」の列が割り当てられていません。名前にあたる列を選んでください。');
+            }
+            if (!state.mapping.includes('skill_desk') || !state.mapping.includes('skill_stage')) {
+                notices.push('スキルの列が未割り当てです。新規メンバーは標準(3)で登録されます。3以上は「リーダー可」として扱われるので、必要なら取り込み後に修正してください。既存メンバーの上書きでは現状維持になります。');
+            }
+            if (sheet.truncated) {
+                notices.push('行数が多いため、先頭の一部のみ読み込んでいます。');
+            }
+
+            const sheetSelect = state.sheets.length > 1
+                ? `<label>シート: <select onchange="onMemberImportSheetChange(this.value)">
+                        ${state.sheets.map((s, i) => `<option value="${i}" ${i === state.sheetIndex ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('')}
+                   </select></label>`
+                : '';
+
+            body.style.display = 'block';
+            body.innerHTML = `
+                <h3 style="margin-top: 14px;">① 列の紐づけ</h3>
+                <div class="import-options">
+                    ${sheetSelect}
+                    <label><input type="checkbox" ${state.hasHeader ? 'checked' : ''} onchange="onMemberImportHeaderToggle(this.checked)"> 1行目は見出し（取り込まない）</label>
+                    <label>スキルが空欄の新規メンバー:
+                        <select onchange="onMemberImportPolicyChange(this.value)">
+                            <option value="error" ${state.emptySkillPolicy === 'error' ? 'selected' : ''}>エラーにして取り込まない</option>
+                            <option value="1" ${state.emptySkillPolicy === '1' ? 'selected' : ''}>1（初心者）で補う</option>
+                            <option value="3" ${state.emptySkillPolicy === '3' ? 'selected' : ''}>3（標準・リーダー可）で補う</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="import-scroll">
+                    <table class="import-table">
+                        <thead><tr><th>行</th>${mappingHead}</tr></thead>
+                        <tbody>${mappingRows}</tbody>
+                    </table>
+                </div>
+                ${notices.map(text => `<div style="font-size: 12px; color: #b26a00; margin-bottom: 6px;">⚠️ ${escapeHtml(text)}</div>`).join('')}
+
+                <h3>② 取り込み内容の確認</h3>
+                <div style="font-size: 13px; margin-bottom: 4px;">
+                    新規追加 <strong>${counts.add}</strong>人 ／ 上書き <strong>${counts.overwrite}</strong>人 ／ 飛ばす <strong>${counts.skip}</strong>人 ／
+                    <span style="color:#c62828;">除外（エラー） <strong>${counts.error}</strong>行</span>
+                </div>
+                <div style="font-size: 12px; color: #666;">
+                    同名の登録済みメンバーを「上書き」すると、ここで読み込んだ項目だけを更新します（空欄のセル、NG・希望バンド・出勤日数の目安は現状維持）。同じ名前を2人登録することはできません。
+                </div>
+                <div class="import-scroll" style="max-height: 360px;">
+                    <table class="import-table">
+                        <thead><tr><th>行</th><th>判定</th><th>名前</th><th>学年</th><th>属性</th><th>卓</th><th>ステージ</th><th>処理</th><th>メモ</th></tr></thead>
+                        <tbody>${resultRows || '<tr><td colspan="9" style="color:#999;">取り込める行がありません</td></tr>'}</tbody>
+                    </table>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="btn-primary" ${importable === 0 ? 'disabled' : ''} onclick="applyMemberImport()">✅ ${importable}人を取り込む</button>
+                    <button type="button" class="btn-secondary" onclick="cancelMemberImport()">✕ やめる</button>
+                </div>
+            `;
+        }
+
+        function applyMemberImport() {
+            if (!memberImportState) return;
+            const results = evaluateMemberImportRows();
+            const targets = results.filter(r => r.status !== 'error' && !(r.existing && r.action === 'skip'));
+            if (targets.length === 0) return;
+
+            const overwriteCount = targets.filter(r => r.existing).length;
+            if (overwriteCount > 0 && !confirm(`登録済みの ${overwriteCount} 人を上書きします。よろしいですか？`)) {
+                return;
+            }
+
+            let added = 0;
+            let updated = 0;
+            const baseId = Date.now();
+            targets.forEach((r, index) => {
+                if (r.existing) {
+                    const member = r.existing;
+                    if (r.grade) member.grade = r.grade;
+                    if (r.tag) member.tag = r.tag;
+                    if (r.skill_desk !== undefined) member.skill_desk = r.skill_desk;
+                    if (r.skill_stage !== undefined) member.skill_stage = r.skill_stage;
+                    updated++;
+                } else {
+                    appData.members.push({
+                        id: baseId + index,
+                        name: r.name,
+                        grade: r.grade || null,
+                        tag: r.tag || null,
+                        skill_desk: r.skill_desk,
+                        skill_stage: r.skill_stage,
+                        target_days: null,
+                        count: 0,
+                        ng_bands: [],
+                        ng_times: {},
+                        req_bands: []
+                    });
+                    added++;
+                }
+            });
+
+            const skipped = results.filter(r => r.status !== 'error' && r.existing && r.action === 'skip').length;
+            const errored = results.filter(r => r.status === 'error').length;
+
+            if (editingMemberId !== null) {
+                // 編集中のフォームが上書きされた内容と食い違わないよう、編集モードを解除する
+                cancelEditMember();
+            }
+            renderMembersList();
+            cancelMemberImport();
+            setMemberImportMessage(
+                `✅ 取り込みました: 新規 ${added}人 / 上書き ${updated}人` +
+                (skipped ? ` / 飛ばした ${skipped}人` : '') +
+                (errored ? ` / エラーで除外 ${errored}行` : '') +
+                '。NG・希望バンド・出勤日数の目安は各メンバーの ✏️ から設定できます。',
+                '#2e7d32'
+            );
         }
 
         function removeMember(memberId) {
@@ -1849,7 +2455,7 @@
                 return `
                     <div class="member-card">
                         <div class="card-header-row">
-                            <h3>${member.name}${member.grade ? `<span style="font-size: 12px; color: #667eea; font-weight: 600; margin-left: 8px;">🎓 ${member.grade}</span>` : ''}</h3>
+                            <h3>${escapeHtml(member.name)}${member.grade ? `<span style="font-size: 12px; color: #667eea; font-weight: 600; margin-left: 8px;">🎓 ${escapeHtml(member.grade)}</span>` : ''}${member.tag ? `<span style="font-size: 12px; color: #e65100; font-weight: 600; margin-left: 8px;">🏷️ ${escapeHtml(member.tag)}</span>` : ''}</h3>
                             <div class="icon-btn-group">
                                 <button type="button" class="icon-btn" title="編集" onclick="startEditMember(${member.id})">✏️</button>
                                 <button type="button" class="icon-btn" title="削除" onclick="removeMember(${member.id})">🗑️</button>
@@ -1859,9 +2465,9 @@
                             <div><strong>卓スキル:</strong> ${member.skill_desk}/5</div>
                             <div><strong>ステージスキル:</strong> ${member.skill_stage}/5</div>
                             <div><strong>出勤日数の目安:</strong> ${member.target_days ? `${member.target_days}日にまとめる` : '指定なし（全日程に散らす）'}</div>
-                            <div><strong>NG バンド:</strong> ${member.ng_bands.length > 0 ? member.ng_bands.join(', ') : 'なし'}</div>
+                            <div><strong>NG バンド:</strong> ${member.ng_bands.length > 0 ? member.ng_bands.map(escapeHtml).join(', ') : 'なし'}</div>
                             <div><strong>NG 時間:</strong> ${ngTimesDisplay || 'なし'}</div>
-                            <div><strong>希望バンド:</strong> ${member.req_bands.length > 0 ? member.req_bands.join(', ') : 'なし'}</div>
+                            <div><strong>希望バンド:</strong> ${member.req_bands.length > 0 ? member.req_bands.map(escapeHtml).join(', ') : 'なし'}</div>
                         </div>
                     </div>
                 `;

@@ -15,6 +15,7 @@ from collections import defaultdict
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from io import BytesIO
+from member_import import parse_members_file, MAX_IMPORT_FILE_BYTES
 
 app = Flask(__name__)
 CORS(app)  # CORS対応
@@ -186,6 +187,11 @@ def validate_member_structure(member, index):
         if isinstance(target_days, bool) or not isinstance(target_days, int) or target_days < 1:
             return f"members[{index}].target_days は1以上の整数である必要があります"
 
+    # 任意の属性ラベル（例: お助け枠）。表示専用で、割り当てロジックには影響しない
+    tag = member.get("tag")
+    if tag is not None and not isinstance(tag, str):
+        return f"members[{index}].tag は文字列である必要があります"
+
     ng_times = member.get("ng_times", [])
     if isinstance(ng_times, list):
         for i, slot in enumerate(ng_times):
@@ -244,6 +250,8 @@ def normalize_member(member):
     normalized.setdefault("grade", None)
     # 出勤日数の目安（複数日のときだけ意味を持つソフト制約）。未指定は None（全日程に散らす）
     normalized.setdefault("target_days", None)
+    # 任意の属性ラベル（表示専用）。未指定は None
+    normalized.setdefault("tag", None)
     normalized["count"] = 0
     normalized["desk_count"] = 0
     normalized["stage_count"] = 0
@@ -1200,7 +1208,7 @@ def create_excel_workbook(timetable_multi, shift_result, members):
     ws_summary = wb.create_sheet("全体集計", 0)
 
     # 集計ヘッダー
-    summary_headers = ["メンバー名", "学年", "シフト回数", "卓回数", "ステージ回数"]
+    summary_headers = ["メンバー名", "学年", "属性", "シフト回数", "卓回数", "ステージ回数"]
     for col, header in enumerate(summary_headers, 1):
         cell = ws_summary.cell(row=1, column=col)
         cell.value = header
@@ -1217,6 +1225,7 @@ def create_excel_workbook(timetable_multi, shift_result, members):
         member_data = [
             member["name"],
             member.get("grade") if member.get("grade") is not None else "-",
+            member.get("tag") or "-",
             member["count"],
             member.get("desk_count", "-"),
             member.get("stage_count", "-"),
@@ -1229,9 +1238,10 @@ def create_excel_workbook(timetable_multi, shift_result, members):
 
     ws_summary.column_dimensions['A'].width = 20
     ws_summary.column_dimensions['B'].width = 10
-    ws_summary.column_dimensions['C'].width = 12
+    ws_summary.column_dimensions['C'].width = 16
     ws_summary.column_dimensions['D'].width = 12
-    ws_summary.column_dimensions['E'].width = 14
+    ws_summary.column_dimensions['E'].width = 12
+    ws_summary.column_dimensions['F'].width = 14
 
     return wb
 
@@ -1488,6 +1498,31 @@ def api_estimate_limits():
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/parse-members-file", methods=["POST"])
+def parse_members_file_api():
+    """
+    メンバー一覧ファイル（CSV / xlsx）を読み、行×列の文字列表として返す。
+
+    メンバーそのものはここでは作らない。列の紐づけ・検証・確定はブラウザ側の
+    取り込みプレビューで行い、確定した内容だけが members に入る。
+    """
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "ファイルが選択されていません"}), 400
+
+    # 上限+1バイトまでしか読まない（巨大ファイル対策）
+    raw = uploaded.stream.read(MAX_IMPORT_FILE_BYTES + 1)
+    try:
+        result = parse_members_file(uploaded.filename, raw)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"ファイルの読み取り中にエラーが発生しました: {e}"}), 500
+
+    result["filename"] = uploaded.filename
+    return jsonify(result)
 
 
 @app.route("/api/health", methods=["GET"])
