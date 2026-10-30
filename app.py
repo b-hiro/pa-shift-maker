@@ -70,6 +70,15 @@ ROLE_BALANCE_WEIGHT = 8
 # 直前と異なる役割の優先度からこの値を引く（直前と同じ役割にはこのペナルティは適用されない）
 ROLE_SWITCH_PENALTY = 25
 
+# 連続で入る回数の推奨（consecutive_run_target・ソフト制約）の重み。
+# 「バンドを続けて担当する回数」を役割（卓/ステージ）を問わずに数え、推奨回数に達するまでは
+# 続けて入りやすく、達したあとは続けて入りにくくする（入るなら推奨回数ずつまとめて、あとは休む）。
+# 直前のバンドに入っている人には常に CONTINUITY_BONUS（+20）が付いているため、
+# 推奨回数に達した人の実質的な減点は RUN_OVER_PENALTY - CONTINUITY_BONUS になる。
+# どちらもハード除外ではなく、ペース管理（PACE_OVERAGE_PENALTY_WEIGHT）や学年・個人の上限より弱い。
+RUN_TARGET_BONUS = 25
+RUN_OVER_PENALTY = 60
+
 # 複数日イベントで「この人は全日程に散らさず、◯日にまとめたい」を表す任意項目 target_days（ソフト制約）の重み。
 # - すでにその日に入っている人は、その日の残りのバンドでも優先する（その日を「開いた日」としてまとめる）
 # - まだ目安の日数に達していない人は、すでに入った日の前後（連続した日）を少しだけ優先する
@@ -261,6 +270,9 @@ def normalize_member(member):
     normalized["last_role"] = None
     normalized["role_streak"] = 0
     normalized["max_role_streak"] = 0
+    # 役割を問わない「バンドを続けて担当している回数」と、推奨回数を超えて続けた延べバンド数
+    normalized["run_length"] = 0
+    normalized["run_overrun"] = 0
     return normalized
 
 
@@ -302,7 +314,14 @@ def parse_shift_config(data):
         "total_limit_per_member": data.get("total_limit_per_member"),
         "grade_limits": data.get("grade_limits", {}) or {},
         "candidate_count": data.get("candidate_count", DEFAULT_CANDIDATE_COUNT),
+        # 連続でバンドに入る回数の推奨（ソフト制約・全員共通）。None なら指定なし
+        "consecutive_run_target": data.get("consecutive_run_target"),
     }
+
+    run_target = config["consecutive_run_target"]
+    if run_target is not None:
+        if isinstance(run_target, bool) or not isinstance(run_target, int) or run_target < 1:
+            return None, "consecutive_run_target は1以上の整数である必要があります"
 
     for field in (
         "desk_max_members",
@@ -662,6 +681,13 @@ def _assign_band(
     代わりに「全日程分の持ち分（基準値）を超えない」ことだけを減点で見る（少ない日数に詰め込まれて
     他の人より回数が増えすぎるのを防ぐ）。
 
+    連続で入る回数の推奨（consecutive_run_target・ソフト制約・全員共通）:
+    指定すると、役割（卓/ステージ）を問わず「バンドを続けて担当する回数」がその回数ずつになるよう
+    寄せる。直前のバンドに入っていて推奨回数に達していない人は続けて入りやすく（RUN_TARGET_BONUS）、
+    達した人は続けて入りにくく（RUN_OVER_PENALTY）する。ハード除外はしないので、他に候補がいなければ
+    推奨を超えて続けて入る（不成立よりは連続超過を許す）。日をまたぐと連続は数え直す。
+    同一役割への連続の上限（CONSECUTIVE_ROLE_LIMIT）とは別に数える。
+
     戻り値の4番目 tight_roles は、卓・ステージのうち「リーダー候補が1人しか残っていなかった」
     ロールの数（0〜2）。その1人が欠けると不成立になる＝不足リスクの指標として複数案の比較に使う。
     """
@@ -759,6 +785,19 @@ def _assign_band(
             return ROLE_SWITCH_PENALTY
         return 0
 
+    run_target = config.get("consecutive_run_target")
+
+    def run_target_adjust(m):
+        # 連続で入る回数の推奨（ソフト制約）による優先度の加減点。役割（卓/ステージ）は問わない。
+        # 直前のバンドに入っていて（run_length > 0）、まだ推奨回数に達していなければ続けて入りやすくし、
+        # 達していれば続けて入りにくくする（休みやすくする）。直前に入っていない人には何もしない。
+        if not run_target:
+            return 0
+        run = m.get("run_length", 0)
+        if run <= 0:
+            return 0
+        return RUN_TARGET_BONUS if run < run_target else -RUN_OVER_PENALTY
+
     # 卓チーム編成
     available_desk = []
     for m in members:
@@ -788,6 +827,7 @@ def _assign_band(
             priority_desk += CONTINUITY_BONUS
         priority_desk -= pace_penalty(m, "desk", "skill_desk")
         priority_desk += day_focus_adjust(m)
+        priority_desk += run_target_adjust(m)
         priority_desk -= consecutive_role_penalty(m, "desk")
         priority_desk += role_continuity_bonus(m, "desk")
         priority_desk -= role_switch_penalty(m, "desk")
@@ -841,6 +881,7 @@ def _assign_band(
             priority_stage += CONTINUITY_BONUS
         priority_stage -= pace_penalty(m, "stage", "skill_stage")
         priority_stage += day_focus_adjust(m)
+        priority_stage += run_target_adjust(m)
         priority_stage -= consecutive_role_penalty(m, "stage")
         priority_stage += role_continuity_bonus(m, "stage")
         priority_stage -= role_switch_penalty(m, "stage")
@@ -903,6 +944,14 @@ def _assign_band(
             if m["role_streak"] > m.get("max_role_streak", 0):
                 m["max_role_streak"] = m["role_streak"]
 
+        # 役割を問わない連続回数。入らなかったバンドで 0 に戻る（日の最初のバンドも _run_day_core で 0 に戻す）
+        if m["name"] in assigned_names:
+            m["run_length"] = m.get("run_length", 0) + 1
+            if run_target and m["run_length"] > run_target:
+                m["run_overrun"] = m.get("run_overrun", 0) + 1
+        else:
+            m["run_length"] = 0
+
     band_result = {"卓": desk_names, "ステージ": stage_names}
 
     infeasible_entry = None
@@ -949,6 +998,10 @@ def _run_day_core(timetable, members, grade_totals, config, rng, pace_baselines,
     band_team_sizes = []
     tight_total = 0
 
+    # 日をまたいだ連続は「連続」とみなさない（連続で入る回数は日ごとに数え直す）
+    for m in members:
+        m["run_length"] = 0
+
     for i, band in enumerate(band_order):
         prev_band = band_order[i - 1] if i > 0 else None
         next_band = band_order[i + 1] if i < len(band_order) - 1 else None
@@ -980,8 +1033,10 @@ def _candidate_quality(infeasible_count, tight_bands, band_team_sizes, members):
     3) 出勤日数の目安（target_days）を超えている日数が少ない方が良い
     4) 同一役割への連続配置が3回を超えているメンバーが少ない・超過幅が小さい方が良い
        （卓・ステージのどちらかが0回のまま偏るのは許容するため、ここでは評価しない）
-    5) バンドごとの人数がバンド間で均されている方が良い（標準偏差が小さい）
-    6) メンバー間の配置回数の偏りが少ない方が良い（標準偏差が小さい）
+    5) 連続で入る回数の推奨（consecutive_run_target）を超えて続けて入ったバンドが少ない方が良い
+       （推奨を指定していなければ常に0で、比較に影響しない）
+    6) バンドごとの人数がバンド間で均されている方が良い（標準偏差が小さい）
+    7) メンバー間の配置回数の偏りが少ない方が良い（標準偏差が小さい）
        ※出勤日数の目安を指定した人は、意図的に配置を絞る/まとめる対象なので対象外にする
     """
     day_overrun = sum(
@@ -992,10 +1047,12 @@ def _candidate_quality(infeasible_count, tight_bands, band_team_sizes, members):
     consecutive_overrun = sum(
         max(0, m.get("max_role_streak", 0) - CONSECUTIVE_ROLE_LIMIT) for m in members
     )
+    # 連続で入る回数の推奨を超えて続けて入ったバンドの延べ数（推奨未指定なら常に0）
+    run_overrun = sum(m.get("run_overrun", 0) for m in members)
     balance = statistics.pstdev(band_team_sizes) if len(band_team_sizes) > 1 else 0.0
     counts = [m["count"] for m in members if not m.get("target_days")]
     fairness = statistics.pstdev(counts) if len(counts) > 1 else 0.0
-    return (infeasible_count, tight_bands, day_overrun, consecutive_overrun, balance, fairness)
+    return (infeasible_count, tight_bands, day_overrun, consecutive_overrun, run_overrun, balance, fairness)
 
 
 def generate_pa_shift(timetable, members_data, day_num=None, config=None):
@@ -1150,7 +1207,7 @@ def generate_pa_shift_multi_day(timetable_multi, members_data, config=None):
 def create_excel_workbook(timetable_multi, shift_result, members):
     """
     複数日のシフトをエクセルワークブックとして作成
-    各日ごとに1シート、最後に集計シートを追加
+    先頭に全体集計、その次に個人別一覧（フィルターで自分の出番だけに絞れる）、続いて各日ごとに1シート
     """
     wb = Workbook()
     wb.remove(wb.active)  # デフォルトシートを削除
@@ -1243,7 +1300,73 @@ def create_excel_workbook(timetable_multi, shift_result, members):
     ws_summary.column_dimensions['E'].width = 12
     ws_summary.column_dimensions['F'].width = 14
 
+    # 個人別一覧シート（全体集計の次）。自分の出番だけにフィルターで絞り込めるよう、
+    # 日別シートのように名前を連結せず「1人×1つの出番」を1行にする
+    _add_personal_schedule_sheet(
+        wb, timetable_multi, shift_result, members,
+        header_fill, header_font, border,
+    )
+
     return wb
+
+
+def _add_personal_schedule_sheet(wb, timetable_multi, shift_result, members, header_fill, header_font, border):
+    """
+    「個人別一覧」シートを全体集計の次に追加する。
+
+    列: メンバー名 / 日 / 時間帯 / 種別 / バンド名。1行目にオートフィルターを付けるので、
+    メンバー名のフィルターで自分だけを選べば、自分の出番だけが時間順に残る（他の行は非表示になるだけ）。
+    並びは「メンバー名（登録順）→ 日 → 時間」。休憩の行は含めない。
+    """
+    ws = wb.create_sheet("個人別一覧", 1)
+
+    headers = ["メンバー名", "日", "時間帯", "種別", "バンド名"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col)
+        cell.value = header
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # 名前 -> [(日, 時間帯, 種別, バンド名), ...]（日→タイムテーブル順に積む）
+    rows_by_member = defaultdict(list)
+    for day_key, timetable in sorted(timetable_multi.items(), key=lambda item: day_sort_key(item[0])):
+        day_num = int(day_key.split('_')[1])
+        day_assignments = shift_result.get(day_key, {})
+        for entry in timetable:
+            if entry["type"] not in ("rh", "act"):
+                continue
+            assigned = day_assignments.get(entry["name"])
+            if not assigned:
+                continue
+            entry_type = "リハ" if entry["type"] == "rh" else "本番"
+            for name in list(assigned["卓"]) + list(assigned["ステージ"]):
+                rows_by_member[name].append((f"{day_num}日目", entry["time"], entry_type, entry["name"]))
+
+    # 登録順に並べ、メンバー一覧にいない名前（通常は発生しない）は最後に付ける
+    ordered_names = [m["name"] for m in members if m["name"] in rows_by_member]
+    ordered_names += [name for name in rows_by_member if name not in ordered_names]
+
+    row = 2
+    for name in ordered_names:
+        for day_label, time_label, entry_type, band_name in rows_by_member[name]:
+            for col, value in enumerate([name, day_label, time_label, entry_type, band_name], 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = value
+                cell.border = border
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            row += 1
+
+    # ヘッダーにフィルターを付け、スクロールしても見出しが見えるよう固定する
+    ws.auto_filter.ref = f"A1:E{max(row - 1, 1)}"
+    ws.freeze_panes = "A2"
+
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 10
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 10
+    ws.column_dimensions['E'].width = 25
 
 
 

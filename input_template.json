@@ -91,5 +91,6 @@
   "stage_limit_per_member": null,
   "total_limit_per_member": null,
   "grade_limits": {},
+  "consecutive_run_target": null,
   "candidate_count": 12
 }

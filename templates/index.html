@@ -608,14 +608,20 @@
             </div>
 
             <div class="form-group" style="margin-bottom: 20px;">
-                <label>📂 入力済み JSON を読み込む</label>
+                <label>📂 入力データの読み込み・保存</label>
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <button type="button" class="btn-secondary" onclick="openJsonImportPicker()">
                         JSONファイルを選択
                     </button>
+                    <button type="button" class="btn-secondary" onclick="downloadInputJson()">
+                        💾 JSONで保存
+                    </button>
                     <input type="file" id="jsonImportInput" accept=".json,application/json" style="display: none;" onchange="importInputJson(event)">
                     <span id="jsonImportStatus" style="font-size: 13px; color: #666;">未選択</span>
                 </div>
+                <p style="font-size: 12px; color: #667eea; margin-top: 6px; line-height: 1.6;">
+                    保存はファイルのダウンロードだけです。画面に入力した内容はそのまま残ります。あとから同じファイルを「JSONファイルを選択」で戻せます。
+                </p>
             </div>
 
             <form id="timetableForm">
@@ -635,6 +641,9 @@
 
                 <!-- ナビゲーションボタン -->
                 <div class="button-group">
+                    <button type="button" class="btn-secondary" onclick="downloadInputJson()">
+                        💾 JSONで保存
+                    </button>
                     <button type="button" class="btn-primary" onclick="goToPage(2)">
                         次へ →
                     </button>
@@ -758,6 +767,9 @@
                 <button type="button" class="btn-secondary" onclick="goToPage(1)">
                     ← 前へ
                 </button>
+                <button type="button" class="btn-secondary" onclick="downloadInputJson()">
+                    💾 JSONで保存
+                </button>
                 <button type="button" class="btn-primary" onclick="goToPage(3)">
                     次へ →
                 </button>
@@ -860,6 +872,15 @@
                 </div>
 
                 <div class="form-group">
+                    <label>🔗 連続で入るバンド数の推奨（ソフト・空欄は指定なし）</label>
+                    <select id="consecutiveRunTarget"></select>
+                    <p style="font-size: 12px; color: #667eea; margin-top: 6px; line-height: 1.6;">
+                        指定すると、バンドに続けて入る回数（卓・ステージは問わない）がこの回数ずつになるようにまとめ、そのあとは休みを入れます（例: 2 なら「2バンド続けて入って休む」）。
+                        目安なので、人手が足りないときは超えて続けて入ることがあります。日をまたいだ連続は数えません。
+                    </p>
+                </div>
+
+                <div class="form-group">
                     <label>🔀 生成パターン数（多いほど良い組み合わせを探索・最大50）</label>
                     <select id="candidateCount"></select>
                 </div>
@@ -929,6 +950,9 @@
             <div class="button-group">
                 <button type="button" class="btn-secondary" onclick="goToPage(2)">
                     ← 前へ
+                </button>
+                <button type="button" class="btn-secondary" onclick="downloadInputJson()">
+                    💾 JSONで保存
                 </button>
                 <button type="button" class="btn-primary" onclick="generateShiftAndPreview()">
                     🔄 シフトを生成
@@ -1069,6 +1093,7 @@
             if (Array.isArray(data.days) && data.days.length > 0) {
                 return data.days.map((day, index) => ({
                     dayNumber: day.day_number || index + 1,
+                    date: day.date || null,
                     startTime: day.start_time || '11:30',
                     bands: Array.isArray(day.bands) ? day.bands : [],
                     rehearsalMinutes: parseInt(day.rh_mins) || 15,
@@ -1125,6 +1150,7 @@
             setInputValue('stageLimitPerMember', data.stage_limit_per_member);
             setInputValue('totalLimitPerMember', data.total_limit_per_member);
             setInputValue('candidateCount', data.candidate_count);
+            setInputValue('consecutiveRunTarget', data.consecutive_run_target);
 
             // JSONに明示的な値が入っていた目安は「ユーザー設定」として扱い、
             // 自動計算した目安値で上書きしないようにする
@@ -1184,6 +1210,99 @@
             } finally {
                 // 同じファイルを再選択しても onchange が発火するようにする
                 event.target.value = '';
+            }
+        }
+
+        // 画面上の入力を読み取り専用でスナップショットする（appData は書き換えない）
+        function buildInputJson() {
+            const numDaysEl = document.getElementById('numDays');
+            const numDays = parseInt(numDaysEl && numDaysEl.value, 10) || appData.numDays || 1;
+
+            const days = (appData.days || []).map((day, index) => {
+                const out = {
+                    day_number: day.dayNumber || index + 1,
+                    start_time: day.startTime || '11:30',
+                    bands: Array.isArray(day.bands) ? day.bands.slice() : [],
+                    rh_mins: day.rehearsalMinutes,
+                    act_mins: day.performanceMinutes,
+                    break_duration: day.breakDuration,
+                    break_after_band: day.breakAfterBand || ''
+                };
+                if (day.date) out.date = day.date;
+                return out;
+            });
+
+            const members = (appData.members || []).map(member => {
+                const out = {
+                    name: member.name || '',
+                    skill_desk: member.skill_desk,
+                    skill_stage: member.skill_stage,
+                    count: 0,
+                    ng_bands: Array.isArray(member.ng_bands) ? member.ng_bands.slice() : [],
+                    ng_times: {},
+                    req_bands: Array.isArray(member.req_bands) ? member.req_bands.slice() : []
+                };
+                if (member.grade !== undefined && member.grade !== null && member.grade !== '') {
+                    out.grade = String(member.grade);
+                }
+                if (typeof member.tag === 'string' && member.tag.trim() !== '') {
+                    out.tag = member.tag.trim();
+                }
+                if (parseInt(member.target_days, 10) >= 1) {
+                    out.target_days = parseInt(member.target_days, 10);
+                }
+                if (Array.isArray(member.ng_times)) {
+                    out.ng_times = { day_1: member.ng_times.slice() };
+                } else if (member.ng_times && typeof member.ng_times === 'object') {
+                    out.ng_times = JSON.parse(JSON.stringify(member.ng_times));
+                }
+                return out;
+            });
+
+            return {
+                num_days: numDays,
+                days,
+                members,
+                ...collectAdvancedConfig()
+            };
+        }
+
+        function downloadInputJson() {
+            try {
+                const data = buildInputJson();
+                const json = JSON.stringify(data, null, 2);
+                const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                const firstDate = data.days[0] && data.days[0].date;
+                const now = new Date();
+                const localDate = [
+                    now.getFullYear(),
+                    String(now.getMonth() + 1).padStart(2, '0'),
+                    String(now.getDate()).padStart(2, '0')
+                ].join('-');
+                const datePart = firstDate
+                    ? String(firstDate).replace(/-/g, '')
+                    : localDate;
+                const filename = `pa_shift_input_${datePart}.json`;
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+
+                const status = document.getElementById('jsonImportStatus');
+                if (status) status.textContent = `保存しました: ${filename}`;
+
+                if (editingMemberId !== null) {
+                    alert('JSONファイルを保存しました。画面の入力はそのまま残っています。\n※いま編集中のメンバーは「メンバーを更新」を押すまでファイルに含まれません。');
+                } else {
+                    alert('JSONファイルを保存しました。画面の入力はそのまま残っています。');
+                }
+            } catch (error) {
+                console.error('JSON保存エラー:', error);
+                alert(`JSONの保存に失敗しました: ${error.message}`);
             }
         }
 
@@ -2504,6 +2623,9 @@
             document.getElementById('candidateCount').innerHTML =
                 buildNumberOptions('', rangeValues(1, 50, 1), 'デフォルト: 12');
 
+            document.getElementById('consecutiveRunTarget').innerHTML =
+                buildNumberOptions('', rangeValues(1, 10, 1), '指定なし');
+
             document.getElementById('gradeLimitDeskMax').innerHTML =
                 buildNumberOptions('', rangeValues(0, 50, 1), 'なし');
             document.getElementById('gradeLimitStageMax').innerHTML =
@@ -2564,6 +2686,9 @@
 
             const candidateCount = getValue('candidateCount');
             if (candidateCount !== '') config.candidate_count = parseInt(candidateCount);
+
+            const consecutiveRunTarget = getValue('consecutiveRunTarget');
+            if (consecutiveRunTarget !== '') config.consecutive_run_target = parseInt(consecutiveRunTarget);
 
             if (Object.keys(appData.gradeLimits).length > 0) {
                 config.grade_limits = appData.gradeLimits;
