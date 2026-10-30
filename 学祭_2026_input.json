@@ -1,0 +1,307 @@
+{
+  "num_days": 4,
+  "days": [
+    {
+      "day_number": 1,
+      "date": "2026-10-31",
+      "start_time": "09:40",
+      "bands": [
+        "朝メイデン",
+        "羊文学",
+        "コレサワ",
+        "おいしくるメロンパン",
+        "ヨルシカ",
+        "35.7",
+        "ASIAN KUNG-FU GENERATION",
+        "Mrs. GREEN APPLE（松原）",
+        "D小町/D.ぶつビスケッツ×SEK",
+        "TOMOO",
+        "東京事変"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 150,
+      "break_after_band": "Mrs. GREEN APPLE（松原）"
+    },
+    {
+      "day_number": 2,
+      "date": "2026-11-01",
+      "start_time": "09:45",
+      "bands": [
+        "berry meet",
+        "せだい",
+        "ちゃくら",
+        "米津玄師",
+        "カネヨリマサール",
+        "04 Limited Sazabys",
+        "メテオ・ベースボールベアー",
+        "Blue Mash（池田）",
+        "King Gnu",
+        "BLANKEY JET CITY",
+        "10-FEET",
+        "Mrs. GREEN APPLE（茂木）",
+        "アニソンオムニバス",
+        "ペルシカリア",
+        "kurayamisaka"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 50,
+      "break_after_band": "メテオ・ベースボールベアー"
+    },
+    {
+      "day_number": 3,
+      "date": "2026-11-02",
+      "start_time": "09:45",
+      "bands": [
+        "Sundae May Club",
+        "Awesome City Club",
+        "aiko",
+        "宇多田ヒカル",
+        "oasis",
+        "フィッシュライフ",
+        "サザンオールスターズ",
+        "FOMARE",
+        "Blue Mash（高村）",
+        "SEKAI NO OWARI",
+        "BLUE ENCOUNT",
+        "神はサイコロを振らない",
+        "Michael Jackson",
+        "Radiohead",
+        "John Mayer"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 50,
+      "break_after_band": "Blue Mash（高村）"
+    },
+    {
+      "day_number": 4,
+      "date": "2026-11-03",
+      "start_time": "09:55",
+      "bands": [
+        "スクールライフオムニ",
+        "サイダーガール",
+        "東京事変(B)",
+        "関ジャニ∞",
+        "妖怪ウォッチBGM",
+        "PSYQUI",
+        "yonige",
+        "聖飢魔II",
+        "非幹部バンド",
+        "幹部バンド"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 0,
+      "break_after_band": ""
+    }
+  ],
+  "members": [
+    {
+      "name": "ぬまた",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "4",
+      "tag": "先輩"
+    },
+    {
+      "name": "ばんば",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3"
+    },
+    {
+      "name": "るい",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3",
+      "tag": "幹部"
+    },
+    {
+      "name": "こうた",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3",
+      "tag": "幹部"
+    },
+    {
+      "name": "ちぃゆい",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3",
+      "tag": "幹部"
+    },
+    {
+      "name": "みらい",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3",
+      "tag": "幹部"
+    },
+    {
+      "name": "やまと",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "3"
+    },
+    {
+      "name": "りょーじ",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "D",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "牟田",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "たまきち",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "あつや",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "こうしん",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "しゅんや",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "てらかわそう",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "2"
+    },
+    {
+      "name": "奏和",
+      "skill_desk": 1,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "1"
+    },
+    {
+      "name": "もてぎ",
+      "skill_desk": 1,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "1"
+    },
+    {
+      "name": "まい",
+      "skill_desk": 1,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "1"
+    },
+    {
+      "name": "だいすけ",
+      "skill_desk": 3,
+      "skill_stage": 3,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "1"
+    },
+    {
+      "name": "みくも",
+      "skill_desk": 1,
+      "skill_stage": 1,
+      "count": 0,
+      "ng_bands": [],
+      "ng_times": {},
+      "req_bands": [],
+      "grade": "1"
+    }
+  ]
+}

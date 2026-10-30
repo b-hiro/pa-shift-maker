@@ -1,0 +1,104 @@
+{
+  "num_days": 5,
+  "days": [
+    {
+      "day_number": 1,
+      "date": "2026-08-20",
+      "start_time": "14:15",
+      "bands": [
+        "フジファブリック",
+        "ハルカミライ",
+        "ストレイテナー",
+        "テレビ大陸音頭",
+        "osage",
+        "ELLEGARDEN"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 0,
+      "break_after_band": ""
+    },
+    {
+      "day_number": 2,
+      "date": "2026-08-21",
+      "start_time": "10:30",
+      "bands": [
+        "L'Arc〜en〜Ciel",
+        "サカナクション",
+        "WOMCADOLE",
+        "Mrs. GREEN APPLE",
+        "MASS OF THE FERMENTING DREGS",
+        "クリープハイプ",
+        "眞名子新",
+        "名誉伝説",
+        "つきみ",
+        "SIX LOUNGE沼田",
+        "BLUE ENCOUNT",
+        "緑黄色社会",
+        "ポルカドットスティングレイ"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 60,
+      "break_after_band": "Mrs. GREEN APPLE"
+    },
+    {
+      "day_number": 3,
+      "date": "2026-08-22",
+      "start_time": "13:00",
+      "bands": [
+        "Ariana Grande",
+        "超⭐️社会的サンダル",
+        "Hysteric Blue",
+        "PRINCESS PRINCESS",
+        "マキシマム ザ ホルモン",
+        "セブンス・ベガ"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 0,
+      "break_after_band": ""
+    },
+    {
+      "day_number": 4,
+      "date": "2026-08-23",
+      "start_time": "11:00",
+      "bands": [
+        "VICTORIOUS",
+        "T.M.Revolution",
+        "Disney",
+        "中森明菜",
+        "GREEN DAY",
+        "KingGnu",
+        "oasis",
+        "ヨルシカ山田"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 60,
+      "break_after_band": "GREEN DAY"
+    },
+    {
+      "day_number": 5,
+      "date": "2026-08-24",
+      "start_time": "10:45",
+      "bands": [
+        "Men I Trust",
+        "SIX LOUNGE土井",
+        "Trooper Salute",
+        "コレサワ",
+        "RADWIMPS",
+        "TM NETWORK",
+        "w.o.d.",
+        "ヨルシカ高橋",
+        "Blue Mash",
+        "リスキーシフト"
+      ],
+      "rh_mins": 15,
+      "act_mins": 10,
+      "break_duration": 55,
+      "break_after_band": "コレサワ"
+    }
+  ],
+  "members": []
+}
