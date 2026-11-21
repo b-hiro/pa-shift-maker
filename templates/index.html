@@ -633,6 +633,19 @@
 
                 <p id="totalBandsCount" style="margin-top: 15px; color: #333; font-weight: 600;">🎸 登録バンド数: 0 バンド（全日程合計）</p>
 
+                <div class="import-panel" style="margin-top: 20px;">
+                    <h3>📋 Googleフォーム用の選択肢</h3>
+                    <p style="font-size: 12px; color: #555; line-height: 1.7;">
+                        JSONから読み込んだ正式なバンド名を、そのままGoogleフォームの「出演バンド」（チェックボックス）へ貼り付けられます。
+                        時間帯は12時から、イベント終了時刻を含む1時間枠まで作ります。
+                    </p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                        <button type="button" class="btn-secondary" onclick="copyBandListForGoogleForm()">🎸 バンド一覧をコピー</button>
+                        <button type="button" class="btn-secondary" onclick="copyNgTimeOptionsForGoogleForm()">🕐 12時以降の不可時間をコピー</button>
+                    </div>
+                    <div id="formMaterialCopyStatus" style="font-size: 12px; color: #666; margin-top: 8px;"></div>
+                </div>
+
                 <!-- 日別設定タブ -->
                 <div id="daysContainer" style="margin-top: 30px;">
                     <div class="tabs" id="dayTabs"></div>
@@ -677,6 +690,24 @@
                 <input type="file" id="memberImportInput" accept=".csv,.tsv,.txt,.xlsx,.xlsm" style="display: none;" onchange="handleMemberFileSelected(event)">
                 <div id="memberImportMessage" style="font-size: 13px; margin-top: 8px;"></div>
                 <div id="memberImportBody" style="display: none;"></div>
+            </div>
+
+            <div class="import-panel" id="formResponseImportPanel">
+                <h3>📝 Googleフォームの回答を取り込む</h3>
+                <p style="font-size: 12px; color: #555; line-height: 1.7;">
+                    先に上のスキル表でメンバーを登録してから、Googleフォームの回答スプレッドシートを
+                    <strong>.xlsx または .csv</strong> で保存して読み込みます。
+                    「名前」「出演バンド」「1日目の入れない時間帯」などを自動判定し、スキルを変えずに出演バンドとNG時間だけを反映します。
+                    同じ人の回答が複数ある場合は、下にある新しい回答を採用します。希望バンドは読み取りません。
+                </p>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
+                    <button type="button" class="btn-secondary" onclick="copyMemberNamesForGoogleForm()">👤 メンバー名一覧をコピー</button>
+                    <button type="button" class="btn-secondary" onclick="openFormResponseFilePicker()">📂 フォーム回答を選ぶ</button>
+                    <span id="formResponseImportFileLabel" style="font-size: 12px; color: #666;"></span>
+                </div>
+                <input type="file" id="formResponseImportInput" accept=".csv,.tsv,.txt,.xlsx,.xlsm" style="display: none;" onchange="handleFormResponseFileSelected(event)">
+                <div id="formResponseImportMessage" style="font-size: 13px; margin-top: 8px;"></div>
+                <div id="formResponseImportBody" style="display: none;"></div>
             </div>
 
             <form id="memberForm">
@@ -1066,6 +1097,98 @@
 
         function combineTimeValue(hour, minute) {
             return `${hour}:${minute}`;
+        }
+
+        function getAllRegisteredBands() {
+            const seen = new Set();
+            const bands = [];
+            (appData.days || []).forEach(day => {
+                (day.bands || []).forEach(band => {
+                    const name = String(band || '').trim();
+                    if (name && !seen.has(name)) {
+                        seen.add(name);
+                        bands.push(name);
+                    }
+                });
+            });
+            return bands;
+        }
+
+        async function copyPlainText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const copied = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (!copied) throw new Error('クリップボードへコピーできませんでした');
+        }
+
+        async function copyFormMaterial(lines, successMessage, statusId) {
+            const status = document.getElementById(statusId);
+            if (!lines.length) {
+                if (status) status.textContent = 'コピーする項目がありません。先にデータを登録してください。';
+                return;
+            }
+            try {
+                await copyPlainText(lines.join('\n'));
+                if (status) status.textContent = successMessage;
+            } catch (error) {
+                console.error('クリップボードコピーエラー:', error);
+                if (status) status.textContent = 'コピーできませんでした。ブラウザのクリップボード許可を確認してください。';
+            }
+        }
+
+        function copyBandListForGoogleForm() {
+            const bands = getAllRegisteredBands();
+            copyFormMaterial(
+                bands,
+                `✅ ${bands.length}バンドをコピーしました。Googleフォームのチェックボックスの「選択肢1」へ貼り付けてください。`,
+                'formMaterialCopyStatus'
+            );
+        }
+
+        function estimatedLatestEventHour() {
+            let latestMinutes = 17 * 60;
+            (appData.days || []).forEach(day => {
+                const [hour, minute] = String(day.startTime || '00:00').split(':').map(Number);
+                if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
+                const bandMinutes = (day.bands || []).length *
+                    ((parseInt(day.rehearsalMinutes, 10) || 0) + (parseInt(day.performanceMinutes, 10) || 0));
+                const breakMinutes = parseInt(day.breakDuration, 10) || 0;
+                latestMinutes = Math.max(latestMinutes, hour * 60 + minute + bandMinutes + breakMinutes);
+            });
+            return Math.min(23, Math.max(17, Math.ceil(latestMinutes / 60)));
+        }
+
+        function copyNgTimeOptionsForGoogleForm() {
+            const options = ['終日不可'];
+            const endHour = estimatedLatestEventHour();
+            for (let hour = 12; hour < endHour; hour++) {
+                const start = String(hour).padStart(2, '0') + ':00';
+                const end = String(hour + 1).padStart(2, '0') + ':00';
+                options.push(`${start}-${end}`);
+            }
+            copyFormMaterial(
+                options,
+                `✅ 終日不可と12:00以降の${options.length - 1}枠をコピーしました。各日のチェックボックスへ貼り付けてください。`,
+                'formMaterialCopyStatus'
+            );
+        }
+
+        function copyMemberNamesForGoogleForm() {
+            const names = appData.members.map(member => String(member.name || '').trim()).filter(Boolean);
+            copyFormMaterial(
+                names,
+                `✅ ${names.length}人の名前をコピーしました。Googleフォームのプルダウンの「選択肢1」へ貼り付けてください。`,
+                'formResponseImportMessage'
+            );
         }
 
         const API_BASE_CANDIDATES = [
@@ -2539,6 +2662,441 @@
                 (skipped ? ` / 飛ばした ${skipped}人` : '') +
                 (errored ? ` / エラーで除外 ${errored}行` : '') +
                 '。NG・希望バンド・出勤日数の目安は各メンバーの ✏️ から設定できます。',
+                '#2e7d32'
+            );
+        }
+
+        // ===== Googleフォーム回答取り込み =====
+        // スキル表とは分けて読み込み、登録済みメンバーの出演バンド・日別NG時間だけを更新する。
+        let formResponseImportState = null;
+
+        function formResponseImportFields() {
+            const fields = [
+                { key: 'name', label: '名前' },
+                { key: 'ng_bands', label: '出演バンド' }
+            ];
+            for (let day = 1; day <= appData.numDays; day++) {
+                fields.push({ key: `ng_day_${day}`, label: `${day}日目の不可時間` });
+            }
+            return fields;
+        }
+
+        function setFormResponseImportMessage(text, color) {
+            const el = document.getElementById('formResponseImportMessage');
+            el.textContent = text || '';
+            el.style.color = color || '#555';
+        }
+
+        function openFormResponseFilePicker() {
+            document.getElementById('formResponseImportInput').click();
+        }
+
+        async function handleFormResponseFileSelected(event) {
+            const input = event.target;
+            const file = input.files && input.files[0];
+            if (!file) return;
+
+            if (appData.members.length === 0) {
+                setFormResponseImportMessage('❌ 先にスキル表を読み込み、メンバーを登録してください。', '#c62828');
+                input.value = '';
+                return;
+            }
+
+            setFormResponseImportMessage('読み込み中...', '#666');
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const response = await fetchWithApiFallback('/api/parse-members-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.error) {
+                    throw new Error((result && result.error) || `読み込みに失敗しました（HTTP ${response.status}）`);
+                }
+                startFormResponseImport(file.name, result);
+                setFormResponseImportMessage('', '#555');
+            } catch (error) {
+                cancelFormResponseImport();
+                setFormResponseImportMessage(`❌ ${error.message}`, '#c62828');
+            } finally {
+                input.value = '';
+            }
+        }
+
+        function startFormResponseImport(filename, result) {
+            const firstWithData = result.sheets.findIndex(sheet => sheet.rows.some(row => row.some(cell => cell !== '')));
+            formResponseImportState = {
+                filename,
+                encoding: result.encoding,
+                sheets: result.sheets,
+                sheetIndex: Math.max(0, firstWithData),
+                hasHeader: true,
+                mapping: []
+            };
+            resetFormResponseImportMapping();
+            renderFormResponseImport();
+        }
+
+        function cancelFormResponseImport() {
+            formResponseImportState = null;
+            renderFormResponseImport();
+        }
+
+        function formResponseColumnCount(sheet) {
+            return sheet.rows.reduce((max, row) => Math.max(max, row.length), 0);
+        }
+
+        function guessFormResponseField(header) {
+            const text = String(header || '').normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+            if (text.includes('名前') || text.includes('氏名') || text === 'name' || text.includes('メンバー')) {
+                return 'name';
+            }
+            if (text.includes('出演バンド') || text.includes('出るバンド') || text.includes('自分のバンド')) {
+                return 'ng_bands';
+            }
+            for (let day = 1; day <= appData.numDays; day++) {
+                const hasDay = text.includes(`${day}日目`) || text.includes(`day${day}`);
+                const hasNgMeaning = text.includes('不可') || text.includes('入れない') ||
+                    text.includes('ng') || text.includes('都合');
+                if (hasDay && hasNgMeaning) return `ng_day_${day}`;
+            }
+            return '';
+        }
+
+        function resetFormResponseImportMapping() {
+            const state = formResponseImportState;
+            const sheet = state.sheets[state.sheetIndex];
+            const columnCount = formResponseColumnCount(sheet);
+            const firstRow = sheet.rows.find(row => row.some(cell => cell !== '')) || [];
+            state.mapping = new Array(columnCount).fill('');
+            firstRow.forEach((cell, index) => {
+                const key = guessFormResponseField(cell);
+                if (key && !state.mapping.includes(key)) state.mapping[index] = key;
+            });
+            state.hasHeader = state.mapping.some(Boolean) ||
+                firstRow.some(cell => String(cell).includes('タイムスタンプ'));
+        }
+
+        function getFormResponseDataRows() {
+            const state = formResponseImportState;
+            const sheet = state.sheets[state.sheetIndex];
+            const rows = [];
+            let headerPending = state.hasHeader;
+            sheet.rows.forEach((cells, index) => {
+                if (cells.every(cell => cell === '')) return;
+                if (headerPending) {
+                    headerPending = false;
+                    return;
+                }
+                rows.push({ rowNumber: index + 1, cells });
+            });
+            return rows;
+        }
+
+        function normalizeLookupText(value) {
+            return String(value || '').normalize('NFKC').trim().toLowerCase().replace(/\s+/g, '');
+        }
+
+        function splitFormSelections(value) {
+            const text = String(value || '').trim();
+            if (!text) return [];
+            return text.split(/(?:,\s*|、|\r?\n|;)/).map(item => item.trim()).filter(Boolean);
+        }
+
+        function uniqueLookup(items, valueGetter) {
+            const lookup = new Map();
+            items.forEach(item => {
+                const key = normalizeLookupText(valueGetter(item));
+                if (!key) return;
+                if (!lookup.has(key)) lookup.set(key, []);
+                lookup.get(key).push(item);
+            });
+            return lookup;
+        }
+
+        function resolveUniqueItem(rawValue, exactMap, normalizedMap) {
+            if (exactMap.has(rawValue)) return { item: exactMap.get(rawValue), normalized: false };
+            const matches = normalizedMap.get(normalizeLookupText(rawValue)) || [];
+            if (matches.length === 1) return { item: matches[0], normalized: true };
+            if (matches.length > 1) return { ambiguous: true };
+            return { missing: true };
+        }
+
+        function parseFormBandsCell(rawValue) {
+            const registeredBands = getAllRegisteredBands();
+            const exactMap = new Map(registeredBands.map(band => [band, band]));
+            const normalizedMap = uniqueLookup(registeredBands, band => band);
+            const bands = [];
+            const errors = [];
+            const warnings = [];
+
+            splitFormSelections(rawValue).forEach(rawBand => {
+                const resolved = resolveUniqueItem(rawBand, exactMap, normalizedMap);
+                if (resolved.missing) {
+                    errors.push(`1ページ目にないバンド「${rawBand}」`);
+                } else if (resolved.ambiguous) {
+                    errors.push(`表記が曖昧なバンド「${rawBand}」`);
+                } else if (!bands.includes(resolved.item)) {
+                    bands.push(resolved.item);
+                    if (resolved.normalized) warnings.push(`「${rawBand}」を「${resolved.item}」として照合`);
+                }
+            });
+            return { bands, errors, warnings };
+        }
+
+        function parseFormTimeCell(rawValue) {
+            const slots = [];
+            const errors = [];
+            const warnings = [];
+            const selections = splitFormSelections(rawValue);
+            const allDayWords = new Set(['終日', '終日不可', '一日不可', '1日不可', '×']);
+
+            for (const rawSelection of selections) {
+                let text = String(rawSelection).normalize('NFKC').trim()
+                    .replace(/[〜～–—−]/g, '-')
+                    .replace(/\s+/g, '');
+                if (allDayWords.has(text)) {
+                    if (selections.length > 1) warnings.push('終日不可が選ばれているため、他の時間枠は無視');
+                    return { slots: ['00:00-23:59'], errors, warnings };
+                }
+
+                const match = text.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+                if (!match) {
+                    errors.push(`時間「${rawSelection}」は HH:MM-HH:MM 形式ではありません`);
+                    continue;
+                }
+                const startHour = Number(match[1]);
+                const startMinute = Number(match[2]);
+                const endHour = Number(match[3]);
+                const endMinute = Number(match[4]);
+                const startTotal = startHour * 60 + startMinute;
+                const endTotal = endHour * 60 + endMinute;
+                if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59 || startTotal >= endTotal) {
+                    errors.push(`時間「${rawSelection}」の開始・終了が不正です`);
+                    continue;
+                }
+                const slot = `${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}-` +
+                    `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+                if (!slots.includes(slot)) slots.push(slot);
+            }
+            return { slots, errors, warnings };
+        }
+
+        function evaluateFormResponseRows() {
+            const state = formResponseImportState;
+            const columnOf = key => state.mapping.indexOf(key);
+            const cellText = (cells, key) => {
+                const index = columnOf(key);
+                return index === -1 ? null : String(cells[index] ?? '').trim();
+            };
+            const membersByExactName = new Map(appData.members.map(member => [member.name, member]));
+            const membersByNormalizedName = uniqueLookup(appData.members, member => member.name);
+            const rows = getFormResponseDataRows();
+            const lastRowByName = new Map();
+
+            rows.forEach(row => {
+                const rawName = cellText(row.cells, 'name') || '';
+                const resolved = resolveUniqueItem(rawName, membersByExactName, membersByNormalizedName);
+                if (resolved.item) lastRowByName.set(resolved.item.name, row.rowNumber);
+            });
+
+            return rows.map(row => {
+                const errors = [];
+                const warnings = [];
+                const rawName = cellText(row.cells, 'name') || '';
+                let member = null;
+
+                if (!rawName) {
+                    errors.push('名前が空です');
+                } else {
+                    const resolved = resolveUniqueItem(rawName, membersByExactName, membersByNormalizedName);
+                    if (resolved.missing) errors.push('スキル表に登録されていない名前です');
+                    else if (resolved.ambiguous) errors.push('名前の表記が曖昧で照合できません');
+                    else {
+                        member = resolved.item;
+                        if (resolved.normalized) warnings.push(`名前を「${member.name}」として照合`);
+                    }
+                }
+
+                const superseded = member && lastRowByName.get(member.name) !== row.rowNumber;
+                if (superseded) warnings.push(`同じ人の新しい回答（行${lastRowByName.get(member.name)}）を採用`);
+
+                let ngBands;
+                const rawBands = cellText(row.cells, 'ng_bands');
+                if (rawBands !== null) {
+                    const parsed = parseFormBandsCell(rawBands);
+                    ngBands = parsed.bands;
+                    errors.push(...parsed.errors);
+                    warnings.push(...parsed.warnings);
+                }
+
+                const ngTimes = {};
+                for (let day = 1; day <= appData.numDays; day++) {
+                    const rawTimes = cellText(row.cells, `ng_day_${day}`);
+                    if (rawTimes === null) continue;
+                    const parsed = parseFormTimeCell(rawTimes);
+                    ngTimes[`day_${day}`] = parsed.slots;
+                    errors.push(...parsed.errors.map(message => `${day}日目: ${message}`));
+                    warnings.push(...parsed.warnings.map(message => `${day}日目: ${message}`));
+                }
+
+                const status = errors.length > 0 ? 'error' : (superseded ? 'superseded' : (warnings.length ? 'warn' : 'ok'));
+                return {
+                    rowNumber: row.rowNumber,
+                    name: member ? member.name : rawName,
+                    member,
+                    ngBands,
+                    ngTimes,
+                    status,
+                    messages: errors.concat(warnings)
+                };
+            });
+        }
+
+        function onFormResponseSheetChange(value) {
+            formResponseImportState.sheetIndex = parseInt(value, 10) || 0;
+            resetFormResponseImportMapping();
+            renderFormResponseImport();
+        }
+
+        function onFormResponseHeaderToggle(checked) {
+            formResponseImportState.hasHeader = checked;
+            renderFormResponseImport();
+        }
+
+        function onFormResponseMappingChange(columnIndex, key) {
+            const state = formResponseImportState;
+            if (key) state.mapping = state.mapping.map(current => current === key ? '' : current);
+            state.mapping[columnIndex] = key;
+            renderFormResponseImport();
+        }
+
+        function renderFormResponseImport() {
+            const body = document.getElementById('formResponseImportBody');
+            const fileLabel = document.getElementById('formResponseImportFileLabel');
+            const state = formResponseImportState;
+            if (!state) {
+                body.style.display = 'none';
+                body.innerHTML = '';
+                fileLabel.textContent = '';
+                return;
+            }
+
+            const sheet = state.sheets[state.sheetIndex];
+            const columnCount = formResponseColumnCount(sheet);
+            fileLabel.textContent = state.filename;
+            const fields = formResponseImportFields();
+            const optionHtml = selected => ['<option value="">（使わない）</option>']
+                .concat(fields.map(field =>
+                    `<option value="${field.key}" ${field.key === selected ? 'selected' : ''}>${field.label}</option>`))
+                .join('');
+            const previewRows = sheet.rows.slice(0, 5);
+            const mappingHead = Array.from({ length: columnCount }, (_, index) =>
+                `<th>${memberImportColumnLetter(index)}列<br><select onchange="onFormResponseMappingChange(${index}, this.value)">${optionHtml(state.mapping[index] || '')}</select></th>`
+            ).join('');
+            const mappingRows = previewRows.map((cells, index) => `
+                <tr style="${index === 0 && state.hasHeader ? 'background:#eef0fb; font-weight:700;' : ''}">
+                    <td>${index + 1}${index === 0 && state.hasHeader ? '（見出し）' : ''}</td>
+                    ${Array.from({ length: columnCount }, (_, col) => `<td>${escapeHtml(cells[col] ?? '')}</td>`).join('')}
+                </tr>
+            `).join('');
+
+            const results = evaluateFormResponseRows();
+            const importable = results.filter(result => result.status === 'ok' || result.status === 'warn');
+            const errors = results.filter(result => result.status === 'error').length;
+            const superseded = results.filter(result => result.status === 'superseded').length;
+            const badgeLabel = { ok: 'OK', warn: '要確認', error: '除外', superseded: '旧回答' };
+            const dayHeaders = Array.from({ length: appData.numDays }, (_, index) => `<th>${index + 1}日目NG</th>`).join('');
+            const resultRows = results.map(result => {
+                const dayCells = Array.from({ length: appData.numDays }, (_, index) => {
+                    const slots = result.ngTimes[`day_${index + 1}`];
+                    if (slots === undefined) return '<td style="color:#999;">変更なし</td>';
+                    if (slots.length === 0) return '<td>なし（全日可）</td>';
+                    return `<td>${escapeHtml(slots[0] === '00:00-23:59' ? '終日不可' : slots.join('、'))}</td>`;
+                }).join('');
+                const bands = result.ngBands === undefined
+                    ? '<span style="color:#999;">変更なし</span>'
+                    : (result.ngBands.length ? result.ngBands.map(escapeHtml).join('、') : 'なし');
+                return `
+                    <tr class="import-row-${result.status === 'superseded' ? 'warn' : result.status}">
+                        <td>${result.rowNumber}</td>
+                        <td><span class="import-badge ${result.status === 'superseded' ? 'warn' : result.status}">${badgeLabel[result.status]}</span></td>
+                        <td>${escapeHtml(result.name)}</td>
+                        <td>${bands}</td>
+                        ${dayCells}
+                        <td class="import-memo">${result.messages.map(escapeHtml).join(' / ')}</td>
+                    </tr>`;
+            }).join('');
+
+            const sheetSelect = state.sheets.length > 1
+                ? `<label>シート: <select onchange="onFormResponseSheetChange(this.value)">
+                    ${state.sheets.map((item, index) => `<option value="${index}" ${index === state.sheetIndex ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('')}
+                   </select></label>`
+                : '';
+            const notices = [];
+            if (!state.mapping.includes('name')) notices.push('「名前」の列を割り当ててください。');
+            if (!state.mapping.includes('ng_bands')) notices.push('出演バンド列が未割り当てのため、出演バンドは変更されません。');
+            if (!state.mapping.some(key => key.startsWith('ng_day_'))) notices.push('不可時間の列が未割り当てのため、NG時間は変更されません。');
+
+            body.style.display = 'block';
+            body.innerHTML = `
+                <h3 style="margin-top:14px;">① 列の紐づけ</h3>
+                <div class="import-options">
+                    ${sheetSelect}
+                    <label><input type="checkbox" ${state.hasHeader ? 'checked' : ''} onchange="onFormResponseHeaderToggle(this.checked)"> 1行目は見出し（取り込まない）</label>
+                </div>
+                <div class="import-scroll">
+                    <table class="import-table">
+                        <thead><tr><th>行</th>${mappingHead}</tr></thead>
+                        <tbody>${mappingRows}</tbody>
+                    </table>
+                </div>
+                ${notices.map(text => `<div style="font-size:12px;color:#b26a00;margin-bottom:6px;">⚠️ ${escapeHtml(text)}</div>`).join('')}
+                <h3>② 反映内容の確認</h3>
+                <div style="font-size:13px;margin-bottom:6px;">
+                    反映 <strong>${importable.length}</strong>人 ／ 旧回答 <strong>${superseded}</strong>行 ／
+                    <span style="color:#c62828;">除外 <strong>${errors}</strong>行</span>
+                </div>
+                <div class="import-scroll" style="max-height:360px;">
+                    <table class="import-table">
+                        <thead><tr><th>行</th><th>判定</th><th>名前</th><th>出演バンド</th>${dayHeaders}<th>メモ</th></tr></thead>
+                        <tbody>${resultRows || `<tr><td colspan="${5 + appData.numDays}" style="color:#999;">回答がありません</td></tr>`}</tbody>
+                    </table>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button type="button" class="btn-primary" ${importable.length === 0 || !state.mapping.includes('name') ? 'disabled' : ''} onclick="applyFormResponseImport()">✅ ${importable.length}人の予定を反映</button>
+                    <button type="button" class="btn-secondary" onclick="cancelFormResponseImport()">✕ やめる</button>
+                </div>
+            `;
+        }
+
+        function applyFormResponseImport() {
+            if (!formResponseImportState) return;
+            const targets = evaluateFormResponseRows().filter(result => result.status === 'ok' || result.status === 'warn');
+            if (!targets.length) return;
+            if (!confirm(`${targets.length}人の出演バンドとNG時間を反映します。スキル・希望バンドは変更しません。よろしいですか？`)) {
+                return;
+            }
+
+            targets.forEach(result => {
+                const member = result.member;
+                if (result.ngBands !== undefined) member.ng_bands = result.ngBands.slice();
+                const currentNgTimes = Array.isArray(member.ng_times)
+                    ? { day_1: member.ng_times.slice() }
+                    : { ...(member.ng_times || {}) };
+                Object.entries(result.ngTimes).forEach(([dayKey, slots]) => {
+                    currentNgTimes[dayKey] = slots.slice();
+                });
+                member.ng_times = currentNgTimes;
+            });
+
+            if (editingMemberId !== null) cancelEditMember();
+            renderMembersList();
+            updateMemberNgTimesUI();
+            cancelFormResponseImport();
+            setFormResponseImportMessage(
+                `✅ ${targets.length}人のフォーム回答を反映しました。スキル・希望バンドは変更していません。`,
                 '#2e7d32'
             );
         }

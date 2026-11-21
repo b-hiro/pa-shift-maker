@@ -62,6 +62,24 @@ def test_xlsx_multiple_sheets_and_number_cells():
     assert result["sheets"][0]["rows"][1] == ["みらい", "1", "", "3", "4"]
 
 
+def test_google_form_response_cells_are_preserved_for_browser_mapping():
+    raw = _xlsx_bytes({
+        "フォームの回答 1": [
+            ["タイムスタンプ", "名前", "出演バンド", "1日目の入れない時間帯", "2日目の入れない時間帯"],
+            ["2026/11/21 22:00:00", "みらい", "朝メイデン, ヨルシカ", "12:00-13:00, 15:00-16:00", ""],
+            ["2026/11/21 22:05:00", "るい", "", "終日不可", "16:00-17:00"],
+        ],
+    })
+    rows = parse_members_file("form-responses.xlsx", raw)["sheets"][0]["rows"]
+
+    # Googleフォームの複数選択は1セル内のカンマ区切り文字列として保持し、
+    # ブラウザ側の専用取り込み画面で正式なバンド名・複数NG枠へ分解する。
+    assert rows[1][2] == "朝メイデン, ヨルシカ"
+    assert rows[1][3] == "12:00-13:00, 15:00-16:00"
+    assert rows[2][3] == "終日不可"
+    assert rows[2][4] == "16:00-17:00"
+
+
 @pytest.mark.parametrize("filename, raw, message", [
     ("members.csv", b"", "空"),
     ("members.xls", b"dummy", ".xls"),
