@@ -637,7 +637,7 @@
                     <h3>📋 Googleフォーム用の選択肢</h3>
                     <p style="font-size: 12px; color: #555; line-height: 1.7;">
                         JSONから読み込んだ正式なバンド名を、そのままGoogleフォームの「出演バンド」（チェックボックス）へ貼り付けられます。
-                        時間帯は12時から、イベント終了時刻を含む1時間枠まで作ります。
+                        時間帯は12時から20時までを1時間枠で作ります（イベントが20時を超える場合は終了時刻まで延長します）。
                     </p>
                     <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
                         <button type="button" class="btn-secondary" onclick="copyBandListForGoogleForm()">🎸 バンド一覧をコピー</button>
@@ -1155,7 +1155,7 @@
         }
 
         function estimatedLatestEventHour() {
-            let latestMinutes = 17 * 60;
+            let latestMinutes = 20 * 60;
             (appData.days || []).forEach(day => {
                 const [hour, minute] = String(day.startTime || '00:00').split(':').map(Number);
                 if (!Number.isFinite(hour) || !Number.isFinite(minute)) return;
@@ -1164,7 +1164,7 @@
                 const breakMinutes = parseInt(day.breakDuration, 10) || 0;
                 latestMinutes = Math.max(latestMinutes, hour * 60 + minute + bandMinutes + breakMinutes);
             });
-            return Math.min(23, Math.max(17, Math.ceil(latestMinutes / 60)));
+            return Math.min(23, Math.max(20, Math.ceil(latestMinutes / 60)));
         }
 
         function copyNgTimeOptionsForGoogleForm() {
@@ -2804,6 +2804,14 @@
             return text.split(/(?:,\s*|、|\r?\n|;)/).map(item => item.trim()).filter(Boolean);
         }
 
+        function splitFormBandSelections(value) {
+            const text = String(value || '').trim();
+            if (!text) return [];
+            // Googleフォームは複数回答を「, 」で連結する。バンド名自体に含まれる
+            // スペースなしのカンマ（例: RADWIMPS,Taka）は区切りとして扱わない。
+            return text.split(/(?:,\s+|、|\r?\n|;)/).map(item => item.trim()).filter(Boolean);
+        }
+
         function uniqueLookup(items, valueGetter) {
             const lookup = new Map();
             items.forEach(item => {
@@ -2831,7 +2839,7 @@
             const errors = [];
             const warnings = [];
 
-            splitFormSelections(rawValue).forEach(rawBand => {
+            splitFormBandSelections(rawValue).forEach(rawBand => {
                 const resolved = resolveUniqueItem(rawBand, exactMap, normalizedMap);
                 if (resolved.missing) {
                     errors.push(`1ページ目にないバンド「${rawBand}」`);
@@ -2972,6 +2980,16 @@
             renderFormResponseImport();
         }
 
+        function getUnansweredFormMembers(results) {
+            if (!formResponseImportState || !formResponseImportState.mapping.includes('name')) return [];
+            // 内容にエラーがあっても、回答シートに登録済みの名前があれば「回答済み」とみなす。
+            // 表記エラー等を理由に、回答した人まで誤って終日不可にしないため。
+            const respondedMemberIds = new Set(
+                results.filter(result => result.member).map(result => result.member.id)
+            );
+            return appData.members.filter(member => !respondedMemberIds.has(member.id));
+        }
+
         function renderFormResponseImport() {
             const body = document.getElementById('formResponseImportBody');
             const fileLabel = document.getElementById('formResponseImportFileLabel');
@@ -3006,6 +3024,7 @@
             const importable = results.filter(result => result.status === 'ok' || result.status === 'warn');
             const errors = results.filter(result => result.status === 'error').length;
             const superseded = results.filter(result => result.status === 'superseded').length;
+            const unansweredMembers = getUnansweredFormMembers(results);
             const badgeLabel = { ok: 'OK', warn: '要確認', error: '除外', superseded: '旧回答' };
             const dayHeaders = Array.from({ length: appData.numDays }, (_, index) => `<th>${index + 1}日目NG</th>`).join('');
             const resultRows = results.map(result => {
@@ -3056,8 +3075,15 @@
                 <h3>② 反映内容の確認</h3>
                 <div style="font-size:13px;margin-bottom:6px;">
                     反映 <strong>${importable.length}</strong>人 ／ 旧回答 <strong>${superseded}</strong>行 ／
-                    <span style="color:#c62828;">除外 <strong>${errors}</strong>行</span>
+                    <span style="color:#c62828;">除外 <strong>${errors}</strong>行</span> ／
+                    未回答（全日程を終日不可） <strong>${unansweredMembers.length}</strong>人
                 </div>
+                ${unansweredMembers.length ? `
+                    <div style="font-size:12px;color:#8a5a00;background:#fff8e1;border-left:4px solid #ffa000;padding:10px;margin-bottom:10px;border-radius:6px;">
+                        <strong>⚠️ 未回答者は全日程を終日不可にします:</strong>
+                        ${unansweredMembers.map(member => escapeHtml(member.name)).join('、')}
+                    </div>
+                ` : ''}
                 <div class="import-scroll" style="max-height:360px;">
                     <table class="import-table">
                         <thead><tr><th>行</th><th>判定</th><th>名前</th><th>出演バンド</th>${dayHeaders}<th>メモ</th></tr></thead>
@@ -3065,7 +3091,7 @@
                     </table>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button type="button" class="btn-primary" ${importable.length === 0 || !state.mapping.includes('name') ? 'disabled' : ''} onclick="applyFormResponseImport()">✅ ${importable.length}人の予定を反映</button>
+                    <button type="button" class="btn-primary" ${importable.length + unansweredMembers.length === 0 || !state.mapping.includes('name') ? 'disabled' : ''} onclick="applyFormResponseImport()">✅ 回答${importable.length}人・未回答${unansweredMembers.length}人を反映</button>
                     <button type="button" class="btn-secondary" onclick="cancelFormResponseImport()">✕ やめる</button>
                 </div>
             `;
@@ -3073,9 +3099,14 @@
 
         function applyFormResponseImport() {
             if (!formResponseImportState) return;
-            const targets = evaluateFormResponseRows().filter(result => result.status === 'ok' || result.status === 'warn');
-            if (!targets.length) return;
-            if (!confirm(`${targets.length}人の出演バンドとNG時間を反映します。スキル・希望バンドは変更しません。よろしいですか？`)) {
+            const results = evaluateFormResponseRows();
+            const targets = results.filter(result => result.status === 'ok' || result.status === 'warn');
+            const unansweredMembers = getUnansweredFormMembers(results);
+            if (!targets.length && !unansweredMembers.length) return;
+            if (!confirm(
+                `回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人は全日程を終日不可にします。` +
+                'スキル・希望バンドは変更しません。よろしいですか？'
+            )) {
                 return;
             }
 
@@ -3091,12 +3122,23 @@
                 member.ng_times = currentNgTimes;
             });
 
+            unansweredMembers.forEach(member => {
+                const currentNgTimes = Array.isArray(member.ng_times)
+                    ? { day_1: member.ng_times.slice() }
+                    : { ...(member.ng_times || {}) };
+                for (let day = 1; day <= appData.numDays; day++) {
+                    currentNgTimes[`day_${day}`] = ['00:00-23:59'];
+                }
+                member.ng_times = currentNgTimes;
+            });
+
             if (editingMemberId !== null) cancelEditMember();
             renderMembersList();
             updateMemberNgTimesUI();
             cancelFormResponseImport();
             setFormResponseImportMessage(
-                `✅ ${targets.length}人のフォーム回答を反映しました。スキル・希望バンドは変更していません。`,
+                `✅ 回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人を全日程「終日不可」にしました。` +
+                'スキル・希望バンドは変更していません。',
                 '#2e7d32'
             );
         }
