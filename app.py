@@ -18,7 +18,14 @@ from io import BytesIO
 from member_import import parse_members_file, MAX_IMPORT_FILE_BYTES
 
 app = Flask(__name__)
-CORS(app)  # CORS対応
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "http://localhost:5001",
+            "http://127.0.0.1:5001"
+        ]
+    }
+})
 
 # スキル3以上を「リーダー」とみなす（スキルは 3=リーダー / 1=アシスタント の2段階運用が前提）
 LEADER_SKILL_LEVEL = 3
@@ -1656,6 +1663,6 @@ def health_check():
 
 if __name__ == "__main__":
     print("🚀 PA-Shift Backend Server starting...")
-    print("📌 http://localhost:5000 でサーバーが起動しました")
-    print("🔗 http://localhost:5000/api/health でヘルスチェック")
-    app.run(debug=True, port=5000)
+    print("📌 http://localhost:5001 でサーバーが起動しました")
+    print("🔗 http://localhost:5001/api/health でヘルスチェック")
+    app.run(host="127.0.0.1", debug=True, port=5001)
