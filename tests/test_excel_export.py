@@ -37,7 +37,7 @@ def _build():
         ],
     })
     members = [_member(f"L{i}") for i in range(5)] + [_member("A1", 1, 1), _member("Nobody", 1, 1)]
-    config = {"desk_max_members": 2, "stage_max_members": 2, "candidate_count": 4}
+    config = {"desk_max_members": 2, "stage_max_members": 2}
     shift, updated, infeasible_days = generate_pa_shift_multi_day(timetable_multi, members, config)
     assert not infeasible_days
     return timetable_multi, shift, updated

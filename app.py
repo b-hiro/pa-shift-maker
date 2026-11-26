@@ -9,8 +9,6 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import copy
 import math
-import random
-import statistics
 from collections import defaultdict
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -100,25 +98,6 @@ DAY_OVER_PENALTY = 500
 # 単純合計ちょうど（倍率1.0）だと希望としてややきつく、NG条件などで一部の人に負担が
 # 偏った際に優先度ペナルティが強くかかりすぎるため、少し余裕を持たせている。
 TOTAL_LIMIT_SUGGESTION_MARGIN = 1.5
-
-# 複数パターンを生成し最良案を選ぶ際の試行回数（リクエストの candidate_count で上書き可）
-DEFAULT_CANDIDATE_COUNT = 12
-MAX_CANDIDATE_COUNT = 50
-# 優先度が近い候補者の間で毎回違う組み合わせを試すためのランダムな揺らぎの幅
-PRIORITY_JITTER = 4
-
-
-class _ZeroJitter:
-    """揺らぎ無し（従来通りの純粋な貪欲法）の候補を1つは必ず含めるためのダミーRNG"""
-
-    def uniform(self, a, b):
-        return 0
-
-    def random(self):
-        return 0
-
-
-_ZERO_JITTER = _ZeroJitter()
 
 
 def parse_time_slot(time_slot):
@@ -320,7 +299,6 @@ def parse_shift_config(data):
         "stage_limit_per_member": data.get("stage_limit_per_member"),
         "total_limit_per_member": data.get("total_limit_per_member"),
         "grade_limits": data.get("grade_limits", {}) or {},
-        "candidate_count": data.get("candidate_count", DEFAULT_CANDIDATE_COUNT),
         # 連続でバンドに入る回数の推奨（ソフト制約・全員共通）。None なら指定なし
         "consecutive_run_target": data.get("consecutive_run_target"),
     }
@@ -371,11 +349,6 @@ def parse_shift_config(data):
                 )
                 if error:
                     return None, error
-
-    candidate_count = config["candidate_count"]
-    if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 1:
-        return None, "candidate_count は1以上の整数である必要があります"
-    config["candidate_count"] = max(1, min(candidate_count, MAX_CANDIDATE_COUNT))
 
     return config, None
 
@@ -499,26 +472,16 @@ def _compute_role_pace_baselines(members_data, num_bands, config):
     バンド数から、卓・ステージそれぞれ「リーダー1人あたり」「アシスタント1人あたり」の
     目安配置回数（進行度ベースのペース判定に使う基準値）を計算する。
 
-    卓・ステージとも1バンドにつきリーダー1枠は必須。残り（人数上限-1）枠が補充枠で、
-    卓の補充枠は「スキル3未満のアシスタント」専用（_select_team_with_leader の
-    assistant_only_fill=True）。ステージの補充枠はスキル不問だが、ここでは
-    「本来アシスタントが担うべき想定枠」として同じ考え方で見積もる。
-
-    全メンバー数で一律に割った目安（旧shift_limit）だと、アシスタント適格者が
-    少数しかいない場合に実態よりずっと低い目安になり、序盤のうちに「進みすぎ」と
-    誤判定されて早期にハード除外されてしまう問題があった。ロール・階層ごとの
-    実際の人数で見積もることで、この誤判定を防ぐ。
+    卓の補充枠はアシスタント専用だが、毎バンド埋めず欠員も許容する。
+    アシスタントの目安回数はリーダーと同じ頻度（leader_avg）に揃え、
+    少ないアシスタントへ補充枠を押し付ける見積もりはしない。
     """
-    desk_max_members = config.get("desk_max_members") or DEFAULT_DESK_MAX_MEMBERS
-    stage_max_members = config.get("stage_max_members") or DEFAULT_STAGE_MAX_MEMBERS
-    desk_fill_slots = max(0, desk_max_members - 1)
-    stage_fill_slots = max(0, stage_max_members - 1)
-
-    def _baseline(skill_field, fill_slots):
+    def _baseline(skill_field):
         leaders = [m for m in members_data if m.get(skill_field, 0) >= LEADER_SKILL_LEVEL]
         assistants = [m for m in members_data if m.get(skill_field, 0) < LEADER_SKILL_LEVEL]
         leader_avg = (num_bands * 1) / len(leaders) if leaders else None
-        assistant_avg = (num_bands * fill_slots) / len(assistants) if assistants else None
+        # アシスタントもリーダーと同じ持ち分を目標にする（補充枠の全埋め前提にしない）
+        assistant_avg = leader_avg if assistants else None
         return {
             "leader_count": len(leaders),
             "assistant_count": len(assistants),
@@ -527,8 +490,8 @@ def _compute_role_pace_baselines(members_data, num_bands, config):
         }
 
     return {
-        "desk": _baseline("skill_desk", desk_fill_slots),
-        "stage": _baseline("skill_stage", stage_fill_slots),
+        "desk": _baseline("skill_desk"),
+        "stage": _baseline("skill_stage"),
     }
 
 
@@ -587,7 +550,7 @@ def _pace_thresholds(baseline):
     return soft, hard
 
 
-def _select_team_with_leader(candidates, skill_field, max_members, assistant_only_fill=False):
+def _select_team_with_leader(candidates, skill_field, max_members, assistant_only_fill=False, fill_predicate=None):
     """
     priority降順でソート済みの候補リストから、
     「スキル3以上のリーダーを最低1名含む」チームを組み立てる（ロールベースのハード制約）。
@@ -601,6 +564,9 @@ def _select_team_with_leader(candidates, skill_field, max_members, assistant_onl
     assistant_only_fill=True（卓向け）:
       残りの枠は「スキル3未満のアシスタント」だけで補充する（＝リーダーを2人以上入れない）。
       アシスタント候補がいなければ無理に埋めず、リーダー1名のみのチームも許容する。
+    fill_predicate:
+      補充候補ごとに True/False を返す関数。False の人はスキップする。
+      卓では「リーダー並みのペースを超えるアシスタントは入れず欠員にする」ために使う。
 
     戻り値: (team, leader)  ※team は選ばれたメンバーのリスト、leader は確保できたリーダー（いなければNone）
     """
@@ -620,18 +586,15 @@ def _select_team_with_leader(candidates, skill_field, max_members, assistant_onl
     for m in fill_pool:
         if len(team) >= max_members:
             break
+        if fill_predicate is not None and not fill_predicate(m):
+            continue
         team.append(m)
 
     return team, leader
 
 
-def _count_leaders(candidates, skill_field):
-    """候補リストのうち、そのロールのリーダー（スキル3以上）の人数"""
-    return sum(1 for m in candidates if m[skill_field] >= LEADER_SKILL_LEVEL)
-
-
 def _assign_band(
-    band, band_slots, prev_band, next_band, prev_assigned, members, grade_totals, config, rng, day_num,
+    band, band_slots, prev_band, next_band, prev_assigned, members, grade_totals, config, day_num,
     pace_baselines, band_index, total_bands,
 ):
     """
@@ -648,55 +611,24 @@ def _assign_band(
     卓・ステージそれぞれについて「スキル3以上のリーダーを最低1名含むこと」が必須。
     リーダーを確保できない場合、そのロールは成立不可（アシスタントのみでの編成は不可）。
 
-    卓チームは「リーダー1名 + アシスタント1名」を基本形とし、アシスタント候補がいなければ
-    リーダー1名のみの編成も許容する（リーダーを2人重複配置しない）。
-    ステージチームは従来通り、リーダー確保後は優先度順にスキルを問わず人数上限まで補充する。
+    卓チームは「リーダー1名 +（アシスタント1名 or 欠員）」を基本形とする。
+    2人目はアシスタントのみ（リーダーを2人重複配置しない）。アシスタントがリーダー並みの
+    ペースを超える場合は無理に入れず欠員にする。ステージはリーダー確保後、優先度順に
+    スキルを問わず人数上限まで補充する。
 
     負担の偏り対策（ソフト制約・優先度調整）:
     - 同一役割に3回連続で入っているメンバーは、さらに同じ役割に入る優先度を大きく下げる
-      （shift_limitと同様、ハード除外はせず他に候補がいない場合の最終手段として許容する）
-    - 逆に、まだ上限（3回）に達していない範囲では同じ役割を連続させる優先度を少し上げ、
-      1バンドごとに役割が頻繁に入れ替わるのを避け、できれば2回以上連続するように後押しする
-      （連続を後押しするだけなので、下のロールバランス補正と合わせて「まとまりつつも
-      最終的には両役割を経験する」形に寄せる）
-    - 卓・ステージそれぞれの優先度に、もう一方の役割の累計配置回数（desk_count/stage_count）
-      との差を反映する（ROLE_BALANCE_WEIGHT）。ステージ経験が多く卓経験が少ないメンバーは
-      卓の優先度が上がり、逆に卓ばかりのメンバーは卓の優先度が下がる。これにより
-      「卓ばかり／ステージばかり」という極端な役割の偏りが緩和される
-    - 直前のバンドで連続して働いていたメンバーが、直前と異なる役割に切り替わる優先度を
-      下げる（ROLE_SWITCH_PENALTY）。これにより、連続勤務中に卓→ステージ→卓...のように
-      バンドごとジグザグに役割が入れ替わるのを避け、連続勤務中はなるべく同じ役割にとどまる
-      ようにする（役割継続ボーナスと組み合わさることで効果が強まる）
+      （ハード除外はせず他に候補がいない場合の最終手段として許容する）
+    - 逆に、まだ上限（3回）に達していない範囲では同じ役割を連続させる優先度を少し上げる
+    - 卓・ステージそれぞれの優先度に、もう一方の役割の累計配置回数との差を反映する
+    - 直前のバンドで連続して働いていたメンバーが、直前と異なる役割に切り替わる優先度を下げる
 
-    配置回数のペース判定（_pace_target / _pace_overage）は「今の進行度（band_index /
-    total_bands）」に対して、そのロール専用の目安（desk/stage_target_per_member）→
-    合計の目安（total_target_per_member）→ 絶対上限（目安未設定時のペース配分）→
-    登録人数・バンド数から自動推定したロール・階層別の目安（_compute_role_pace_baselines）
-    の優先順位で基準値を決め、ペースを超えて前倒しで働いているメンバーには優先度
-    ペナルティが付く。目安はソフト制約なので、超過しても候補からは除外しない。
-    自動推定の基準値で「そのロールでリーダーになれないスキル（＝アシスタント）」が
-    大幅に超過している場合は、そのロールの候補からハード除外して強制的に休ませる
-    （中盤・後半に出番を持ち越す）。絶対上限をペース基準に使う場合はリーダーにも
-    ハード除外を適用するが、目安・自動推定ではリーダーには適用せず優先度を下げる
-    だけに留める（リーダー不在によるバンド不成立を防ぐため）。
+    配置回数のペース判定（_pace_target / _pace_overage）は進行度に対する目安ペースで行う。
+    自動推定ではアシスタントの目安もリーダーと同じ頻度にし、卓の補充はペース内のときだけ埋める。
     絶対上限（desk/stage/total_limit_per_member）と学年上限は到達したら候補から除外する。
 
-    出勤日数の目安（target_days・複数日のみ・ソフト制約）:
-    指定したメンバーは全日程に散らさず、その日数に収まるようにまとめる。すでにその日に入っている
-    人は優先し、目安の日数に達した人が新しい日に入る場合は大きく減点する（除外はしない）。
-    全日程の進行度に対するペース判定は「全日に散らす」考え方なのでこの人には適用しない。
-    代わりに「全日程分の持ち分（基準値）を超えない」ことだけを減点で見る（少ない日数に詰め込まれて
-    他の人より回数が増えすぎるのを防ぐ）。
-
-    連続で入る回数の推奨（consecutive_run_target・ソフト制約・全員共通）:
-    指定すると、役割（卓/ステージ）を問わず「バンドを続けて担当する回数」がその回数ずつになるよう
-    寄せる。直前のバンドに入っていて推奨回数に達していない人は続けて入りやすく（RUN_TARGET_BONUS）、
-    達した人は続けて入りにくく（RUN_OVER_PENALTY）する。ハード除外はしないので、他に候補がいなければ
-    推奨を超えて続けて入る（不成立よりは連続超過を許す）。日をまたぐと連続は数え直す。
-    同一役割への連続の上限（CONSECUTIVE_ROLE_LIMIT）とは別に数える。
-
-    戻り値の4番目 tight_roles は、卓・ステージのうち「リーダー候補が1人しか残っていなかった」
-    ロールの数（0〜2）。その1人が欠けると不成立になる＝不足リスクの指標として複数案の比較に使う。
+    出勤日数の目安（target_days・複数日のみ・ソフト制約）と連続回数の推奨
+    （consecutive_run_target）は優先度の加減点のみ（ハード除外しない）。
     """
     desk_max_members = config.get("desk_max_members", DEFAULT_DESK_MAX_MEMBERS)
     stage_max_members = config.get("stage_max_members", DEFAULT_STAGE_MAX_MEMBERS)
@@ -721,6 +653,14 @@ def _assign_band(
     def day_focus_active(m):
         # 出勤日数の目安は複数日（day_num が分かる）のときだけ有効
         return bool(m.get("target_days")) and day_num is not None
+
+    def day_focus_blocks_new_day(m):
+        # 目安日数に達した人が「新しい日」へ入るのを、まずは候補から外す。
+        # リーダー不足で成立できない場合だけ、呼び出し側でこの制限を外して再試行する（ソフト制約）。
+        if not day_focus_active(m):
+            return False
+        worked = m.get("worked_days", [])
+        return day_num not in worked and len(worked) >= m["target_days"]
 
     def day_focus_adjust(m):
         # 出勤日数の目安（ソフト制約）による優先度の加減点
@@ -840,16 +780,40 @@ def _assign_band(
         priority_desk -= role_switch_penalty(m, "desk")
         # ステージ経験が卓経験より多いほど卓の優先度を上げ、逆に卓ばかりなら下げる
         priority_desk += (m["stage_count"] - m["desk_count"]) * ROLE_BALANCE_WEIGHT
-        priority_desk += rng.uniform(0, PRIORITY_JITTER)
 
         candidate = m.copy()
         candidate["priority_desk"] = priority_desk
         available_desk.append(candidate)
 
+    def desk_assistant_fill_ok(m):
+        # 卓の2人目はアシスタント限定。リーダー並みペースを超える人は入れず欠員にする。
+        # 出勤日数の目安がある人は進行度ペースではなく持ち分超過だけを見る（pace_penalty と同じ）。
+        baseline, counter_kind, _ = _pace_target(m, "desk", "skill_desk", config, pace_baselines)
+        soft_overage, _ = _pace_thresholds(baseline)
+        progress_index = total_bands if day_focus_active(m) else band_index
+        overage = _pace_overage(
+            _pace_count_so_far(m, "desk", counter_kind), progress_index, total_bands, baseline
+        )
+        return overage <= soft_overage
+
     available_desk.sort(key=lambda x: x["priority_desk"], reverse=True)
+    available_desk_preferred = [m for m in available_desk if not day_focus_blocks_new_day(m)]
     desk_team, desk_leader = _select_team_with_leader(
-        available_desk, "skill_desk", desk_max_members, assistant_only_fill=True
+        available_desk_preferred,
+        "skill_desk",
+        desk_max_members,
+        assistant_only_fill=True,
+        fill_predicate=desk_assistant_fill_ok,
     )
+    if desk_leader is None and len(available_desk_preferred) < len(available_desk):
+        # 目安日数超過の除外でリーダー不足になった場合のみ、除外を緩めて成立を優先する
+        desk_team, desk_leader = _select_team_with_leader(
+            available_desk,
+            "skill_desk",
+            desk_max_members,
+            assistant_only_fill=True,
+            fill_predicate=desk_assistant_fill_ok,
+        )
 
     # ステージチーム編成（すでに卓に割り当てられたメンバーは除く）
     desk_team_names = {m["name"] for m in desk_team}
@@ -894,22 +858,20 @@ def _assign_band(
         priority_stage -= role_switch_penalty(m, "stage")
         # 卓経験がステージ経験より多いほどステージの優先度を上げ、逆にステージばかりなら下げる
         priority_stage += (m["desk_count"] - m["stage_count"]) * ROLE_BALANCE_WEIGHT
-        priority_stage += rng.uniform(0, PRIORITY_JITTER)
 
         candidate = m.copy()
         candidate["priority_stage"] = priority_stage
         available_stage.append(candidate)
 
     available_stage.sort(key=lambda x: x["priority_stage"], reverse=True)
-    stage_team, stage_leader = _select_team_with_leader(available_stage, "skill_stage", stage_max_members)
-
-    # 不足リスク: リーダーを確保できたロールのうち、リーダー候補が1人しか残っていなかったもの。
-    # （不成立にはなっていないが、その1人が埋まる・NGになる等の変化があれば不成立になる状態）
-    tight_roles = 0
-    if desk_leader is not None and _count_leaders(available_desk, "skill_desk") <= 1:
-        tight_roles += 1
-    if stage_leader is not None and _count_leaders(available_stage, "skill_stage") <= 1:
-        tight_roles += 1
+    available_stage_preferred = [m for m in available_stage if not day_focus_blocks_new_day(m)]
+    stage_team, stage_leader = _select_team_with_leader(
+        available_stage_preferred, "skill_stage", stage_max_members
+    )
+    if stage_leader is None and len(available_stage_preferred) < len(available_stage):
+        stage_team, stage_leader = _select_team_with_leader(
+            available_stage, "skill_stage", stage_max_members
+        )
 
     # 状態更新（カウント・学年別合計・連続役割ストリーク）
     desk_names = [m["name"] for m in desk_team]
@@ -983,13 +945,12 @@ def _assign_band(
             "reason": " / ".join(reasons),
         }
 
-    team_size = len(desk_names) + len(stage_names)
-    return band_result, team_size, infeasible_entry, tight_roles
+    return band_result, infeasible_entry
 
 
-def _run_day_core(timetable, members, grade_totals, config, rng, pace_baselines, day_num=None, band_index_offset=0, total_bands=None):
+def _run_day_core(timetable, members, grade_totals, config, pace_baselines, day_num=None, band_index_offset=0, total_bands=None):
     """
-    1日分のタイムテーブルに対して、バンド順にシフトを組み立てる（コア処理・非候補探索）
+    1日分のタイムテーブルに対して、バンド順にシフトを組み立てる。
 
     band_index_offset / total_bands は「イベント全体を通した進行度」を計算するために使う。
     単日イベントでは band_index_offset=0・total_bands=当日のバンド数（省略時は自動算出）、
@@ -1002,8 +963,6 @@ def _run_day_core(timetable, members, grade_totals, config, rng, pace_baselines,
 
     day_shift = {}
     infeasible_bands = []
-    band_team_sizes = []
-    tight_total = 0
 
     # 日をまたいだ連続は「連続」とみなさない（連続で入る回数は日ごとに数え直す）
     for m in members:
@@ -1017,67 +976,26 @@ def _run_day_core(timetable, members, grade_totals, config, rng, pace_baselines,
         if prev_band and prev_band in day_shift:
             prev_assigned = set(day_shift[prev_band]["卓"] + day_shift[prev_band]["ステージ"])
 
-        band_result, team_size, infeasible_entry, tight_roles = _assign_band(
+        band_result, infeasible_entry = _assign_band(
             band, band_times[band], prev_band, next_band, prev_assigned,
-            members, grade_totals, config, rng, day_num, pace_baselines,
+            members, grade_totals, config, day_num, pace_baselines,
             band_index_offset + i, total_bands,
         )
         day_shift[band] = band_result
-        band_team_sizes.append(team_size)
-        tight_total += tight_roles
         if infeasible_entry:
             infeasible_bands.append(infeasible_entry)
 
-    return day_shift, infeasible_bands, band_team_sizes, tight_total
-
-
-def _candidate_quality(infeasible_count, tight_bands, band_team_sizes, members):
-    """
-    候補案の良さを比較するためのスコア（小さいほど良い）。上にあるものほど優先する。
-    1) 成立しなかったバンド数が少ない方が良い
-    2) 不足リスクが低い方が良い: リーダー候補が1人しか残っていないロールが少ない
-       （tight_bands。その1人が欠けると不成立になる綱渡りの配置を避ける）
-    3) 出勤日数の目安（target_days）を超えている日数が少ない方が良い
-    4) 同一役割への連続配置が3回を超えているメンバーが少ない・超過幅が小さい方が良い
-       （卓・ステージのどちらかが0回のまま偏るのは許容するため、ここでは評価しない）
-    5) 連続で入る回数の推奨（consecutive_run_target）を超えて続けて入ったバンドが少ない方が良い
-       （推奨を指定していなければ常に0で、比較に影響しない）
-    6) バンドごとの人数がバンド間で均されている方が良い（標準偏差が小さい）
-    7) メンバー間の配置回数の偏りが少ない方が良い（標準偏差が小さい）
-       ※出勤日数の目安を指定した人は、意図的に配置を絞る/まとめる対象なので対象外にする
-    """
-    day_overrun = sum(
-        max(0, len(m.get("worked_days", [])) - m["target_days"])
-        for m in members
-        if m.get("target_days")
-    )
-    consecutive_overrun = sum(
-        max(0, m.get("max_role_streak", 0) - CONSECUTIVE_ROLE_LIMIT) for m in members
-    )
-    # 連続で入る回数の推奨を超えて続けて入ったバンドの延べ数（推奨未指定なら常に0）
-    run_overrun = sum(m.get("run_overrun", 0) for m in members)
-    balance = statistics.pstdev(band_team_sizes) if len(band_team_sizes) > 1 else 0.0
-    counts = [m["count"] for m in members if not m.get("target_days")]
-    fairness = statistics.pstdev(counts) if len(counts) > 1 else 0.0
-    return (infeasible_count, tight_bands, day_overrun, consecutive_overrun, run_overrun, balance, fairness)
+    return day_shift, infeasible_bands
 
 
 def generate_pa_shift(timetable, members_data, day_num=None, config=None):
     """
-    PAシフトを作成する関数（v4）
+    PAシフトを作成する関数
     - NG時間は部分一致（1分でも被れば除外）で判定
     - 卓・ステージの成立条件はロールベース：スキル3以上のリーダーを最低1名含むことが必須
-    - 同一役割（卓/ステージ）への連続配置は3回までに抑えつつ、上限に達するまではできれば
-      2回以上連続するよう後押しする（卓・ステージのどちらかが0回のまま偏るのはOK）
-    - 配置回数は「イベント全体の進行度に対するペース」で管理する。ペース基準値は
-      登録人数・バンド数から卓/ステージ×リーダー/アシスタント別に自動推定し
-      （_compute_role_pace_baselines）、ペースを超えて前倒しで働いているアシスタント
-      （そのロールでリーダーになれないスキルの人）は、大幅に超過すると一時的に候補から
-      除外して休ませる（特定の人が序盤に集中するのを防ぐ）
-    - 優先度にランダムな揺らぎを加えた複数パターンを生成し、
-      「成立バンド数が多い」→「不足リスクが低い」→「出勤日数の目安の超過が少ない」→
-      「連続配置の超過が少ない」→「バンド間の人数の均一性が高い」→「配置回数の公平性が高い」
-      の順で最も良い案を採用する（詳細は _candidate_quality）
+    - 卓の2人目はアシスタントか欠員。アシスタントはリーダーと同じ頻度のペースを超えない範囲でのみ入れる
+    - 同一役割への連続配置は3回までに抑えつつ、できれば2回以上連続するよう後押しする
+    - 配置回数は進行度ペースで管理する（アシスタントの自動目安はリーダーと同じ頻度）
     """
     if config is None:
         config = {"desk_max_members": DEFAULT_DESK_MAX_MEMBERS, "stage_max_members": DEFAULT_STAGE_MAX_MEMBERS}
@@ -1086,24 +1004,12 @@ def generate_pa_shift(timetable, members_data, day_num=None, config=None):
     num_bands = len(band_order)
     pace_baselines = _compute_role_pace_baselines(members_data, num_bands, config)
 
-    rng = random.Random()
-    candidate_count = config.get("candidate_count", DEFAULT_CANDIDATE_COUNT)
-
-    best = None
-    for i in range(candidate_count):
-        members_state = normalize_members(copy.deepcopy(members_data))
-        grade_totals = {"desk": defaultdict(int), "stage": defaultdict(int), "total": defaultdict(int)}
-        candidate_rng = _ZERO_JITTER if i == 0 else rng
-
-        day_shift, infeasible_bands, band_team_sizes, tight_bands = _run_day_core(
-            timetable, members_state, grade_totals, config, candidate_rng, pace_baselines, day_num,
-            band_index_offset=0, total_bands=num_bands,
-        )
-        quality = _candidate_quality(len(infeasible_bands), tight_bands, band_team_sizes, members_state)
-        if best is None or quality < best[0]:
-            best = (quality, day_shift, members_state, infeasible_bands)
-
-    _, day_shift, members_state, infeasible_bands = best
+    members_state = normalize_members(copy.deepcopy(members_data))
+    grade_totals = {"desk": defaultdict(int), "stage": defaultdict(int), "total": defaultdict(int)}
+    day_shift, infeasible_bands = _run_day_core(
+        timetable, members_state, grade_totals, config, pace_baselines, day_num,
+        band_index_offset=0, total_bands=num_bands,
+    )
     return day_shift, members_state, infeasible_bands
 
 
@@ -1145,24 +1051,14 @@ def generate_timetable_multi_day(timetable_config):
 
 def generate_pa_shift_multi_day(timetable_multi, members_data, config=None):
     """
-    複数日のシフトを生成する関数（v4）
+    複数日のシフトを生成する関数
     - ng_times は日別dictのまま非破壊で参照する（2日目以降もNG時間が正しく効く）
     - 卓・ステージの成立条件はロールベース：スキル3以上のリーダーを最低1名含むことが必須
-    - 配置回数の上限（shift_limit）・個人/学年別の配置上限は「全日程を通じた合計」で管理する
-    - 同一役割（卓/ステージ）への連続配置は日をまたいでも3回までに抑えつつ、上限に達するまでは
-      できれば2回以上連続するよう後押しする（卓・ステージのどちらかが0回のまま偏るのはOK）
-    - 配置回数は「全日程を通した進行度に対するペース」で管理する（日をまたいだ通し番号で
-      判定するため、特定の1日だけに特定のメンバーが集中する偏りも抑制される）。ペース基準値は
-      登録人数・全日程の総バンド数から卓/ステージ×リーダー/アシスタント別に自動推定し
-      （_compute_role_pace_baselines）、ペースを超えて前倒しで働いているアシスタントは、
-      大幅に超過すると一時的に候補から除外して休ませる
+    - 卓の2人目はアシスタントか欠員。アシスタントはリーダーと同じ頻度のペースを超えない範囲でのみ入れる
+    - 配置回数の上限・個人/学年別の配置上限は「全日程を通じた合計」で管理する
+    - 配置回数は全日程通しの進行度ペースで管理する（アシスタントの自動目安はリーダーと同じ頻度）
     - メンバーごとの出勤日数の目安（target_days・ソフト制約）を指定すると、その人は全日程に散らさず
-      目安の日数にまとめて配置する（人手が足りない日は超えることがある）。この人には全日程の
-      進行度ペースを使わず、全日程分の持ち分（基準値）を超えないことだけを見る。配置回数の
-      公平性の評価の対象外
-    - 優先度にランダムな揺らぎを加えた複数パターンを全日程分通しで生成し、
-      「不成立が少ない」→「不足リスクが低い」→「出勤日数の目安の超過が少ない」→ …の順で
-      最も良い案を採用する（詳細は _candidate_quality）
+      目安の日数にまとめて配置する（人手が足りない日は超えることがある）
     """
     if config is None:
         config = {"desk_max_members": DEFAULT_DESK_MAX_MEMBERS, "stage_max_members": DEFAULT_STAGE_MAX_MEMBERS}
@@ -1172,42 +1068,25 @@ def generate_pa_shift_multi_day(timetable_multi, members_data, config=None):
     total_bands = sum(len(_band_order_and_times(timetable)[0]) for _, timetable in sorted_days)
     pace_baselines = _compute_role_pace_baselines(members_data, total_bands, config)
 
-    rng = random.Random()
-    candidate_count = config.get("candidate_count", DEFAULT_CANDIDATE_COUNT)
+    members_state = normalize_members(copy.deepcopy(members_data))
+    grade_totals = {"desk": defaultdict(int), "stage": defaultdict(int), "total": defaultdict(int)}
 
-    best = None
-    for i in range(candidate_count):
-        members_state = normalize_members(copy.deepcopy(members_data))
-        grade_totals = {"desk": defaultdict(int), "stage": defaultdict(int), "total": defaultdict(int)}
-        candidate_rng = _ZERO_JITTER if i == 0 else rng
+    shift_result = {}
+    infeasible_days = {}
+    band_index_offset = 0
 
-        shift_result = {}
-        infeasible_days = {}
-        all_band_team_sizes = []
-        total_tight_bands = 0
-        band_index_offset = 0
-
-        for day_key, timetable in sorted_days:
-            day_num = day_sort_key(day_key)
-            day_shift, infeasible_bands, band_team_sizes, tight_bands = _run_day_core(
-                timetable, members_state, grade_totals, config, candidate_rng, pace_baselines, day_num,
-                band_index_offset=band_index_offset, total_bands=total_bands,
-            )
-            band_index_offset += len(band_team_sizes)
-            shift_result[day_key] = day_shift
-            all_band_team_sizes.extend(band_team_sizes)
-            total_tight_bands += tight_bands
-            if infeasible_bands:
-                infeasible_days[day_key] = infeasible_bands
-
-        total_infeasible = sum(len(v) for v in infeasible_days.values())
-        quality = _candidate_quality(
-            total_infeasible, total_tight_bands, all_band_team_sizes, members_state
+    for day_key, timetable in sorted_days:
+        day_num = day_sort_key(day_key)
+        day_bands = len(_band_order_and_times(timetable)[0])
+        day_shift, infeasible_bands = _run_day_core(
+            timetable, members_state, grade_totals, config, pace_baselines, day_num,
+            band_index_offset=band_index_offset, total_bands=total_bands,
         )
-        if best is None or quality < best[0]:
-            best = (quality, shift_result, members_state, infeasible_days)
+        band_index_offset += day_bands
+        shift_result[day_key] = day_shift
+        if infeasible_bands:
+            infeasible_days[day_key] = infeasible_bands
 
-    _, shift_result, members_state, infeasible_days = best
     return shift_result, members_state, infeasible_days
 
 

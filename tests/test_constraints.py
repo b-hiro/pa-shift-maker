@@ -2,7 +2,6 @@
 シフト生成のハード制約を pytest で固定する。
 
 完全一致ではなく「生成結果が制約を満たすか」「リーダー不足時に不成立になるか」を見る。
-ランダム性があるので、成功ケースは複数回回して守られることを確認する。
 """
 
 import copy
@@ -10,6 +9,7 @@ import copy
 import pytest
 
 from app import (
+    LEADER_SKILL_LEVEL,
     generate_pa_shift,
     generate_pa_shift_multi_day,
     generate_timetable,
@@ -19,6 +19,7 @@ from tests.helpers import (
     assert_day_shift_constraints,
     assert_multi_day_constraints,
     count_assignments_in_day_shift,
+    members_by_name,
 )
 
 
@@ -52,7 +53,6 @@ def base_config():
     return {
         "desk_max_members": 2,
         "stage_max_members": 2,
-        "candidate_count": 8,
     }
 
 
@@ -67,14 +67,12 @@ def test_feasible_shift_keeps_hard_constraints(base_config):
         "stage_limit_per_member": 3,
     }
 
-    # ランダム揺れがあるので複数回確認する
-    for _ in range(5):
-        members = _base_members()
-        day_shift, updated, infeasible = generate_pa_shift(
-            timetable, copy.deepcopy(members), day_num=1, config=config
-        )
-        assert infeasible == []
-        assert_day_shift_constraints(day_shift, updated, timetable, config, day_num=1, infeasible_bands=[])
+    members = _base_members()
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(members), day_num=1, config=config
+    )
+    assert infeasible == []
+    assert_day_shift_constraints(day_shift, updated, timetable, config, day_num=1, infeasible_bands=[])
 
 
 def test_ng_band_and_adjacent_not_assigned(base_config):
@@ -85,17 +83,16 @@ def test_ng_band_and_adjacent_not_assigned(base_config):
     # L1 は BandB 出演 → BandA/B/C すべて配置不可になるはず
     members[0]["ng_bands"] = ["BandB"]
 
-    for _ in range(5):
-        day_shift, updated, infeasible = generate_pa_shift(
-            timetable, copy.deepcopy(members), day_num=1, config=base_config
-        )
-        assert infeasible == []
-        assert_day_shift_constraints(
-            day_shift, updated, timetable, base_config, day_num=1, infeasible_bands=[]
-        )
-        for band, teams in day_shift.items():
-            assigned = set(teams["卓"]) | set(teams["ステージ"])
-            assert "L1" not in assigned, f"L1 が {band} に入っている"
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(members), day_num=1, config=base_config
+    )
+    assert infeasible == []
+    assert_day_shift_constraints(
+        day_shift, updated, timetable, base_config, day_num=1, infeasible_bands=[]
+    )
+    for band, teams in day_shift.items():
+        assigned = set(teams["卓"]) | set(teams["ステージ"])
+        assert "L1" not in assigned, f"L1 が {band} に入っている"
 
 
 def test_ng_times_not_assigned(base_config):
@@ -108,34 +105,32 @@ def test_ng_times_not_assigned(base_config):
     # BandA の時間帯全体を NG にする
     members[0]["ng_times"] = {"day_1": ["11:00-11:20"]}
 
-    for _ in range(5):
-        day_shift, updated, infeasible = generate_pa_shift(
-            timetable, copy.deepcopy(members), day_num=1, config=base_config
-        )
-        assert infeasible == []
-        assert_day_shift_constraints(
-            day_shift, updated, timetable, base_config, day_num=1, infeasible_bands=[]
-        )
-        assigned_a = set(day_shift["BandA"]["卓"]) | set(day_shift["BandA"]["ステージ"])
-        assert "L1" not in assigned_a
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(members), day_num=1, config=base_config
+    )
+    assert infeasible == []
+    assert_day_shift_constraints(
+        day_shift, updated, timetable, base_config, day_num=1, infeasible_bands=[]
+    )
+    assigned_a = set(day_shift["BandA"]["卓"]) | set(day_shift["BandA"]["ステージ"])
+    assert "L1" not in assigned_a
 
 
 def test_total_limit_not_exceeded(base_config):
     """絶対上限 total_limit_per_member を超えない。"""
     bands = ["B1", "B2", "B3", "B4", "B5"]
     timetable = generate_timetable("10:00", bands, 10, 10)
-    config = {**base_config, "total_limit_per_member": 2, "candidate_count": 12}
+    config = {**base_config, "total_limit_per_member": 2}
 
-    for _ in range(5):
-        day_shift, updated, infeasible = generate_pa_shift(
-            timetable, copy.deepcopy(_base_members()), day_num=1, config=config
-        )
-        # 上限がきついと一部不成立もあり得るが、成立分・member count は上限内
-        assert_day_shift_constraints(
-            day_shift, updated, timetable, config, day_num=1, infeasible_bands=infeasible
-        )
-        for m in updated:
-            assert m["count"] <= 2
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(_base_members()), day_num=1, config=config
+    )
+    # 上限がきついと一部不成立もあり得るが、成立分・member count は上限内
+    assert_day_shift_constraints(
+        day_shift, updated, timetable, config, day_num=1, infeasible_bands=infeasible
+    )
+    for m in updated:
+        assert m["count"] <= 2
 
 
 def test_no_leaders_makes_bands_infeasible(base_config):
@@ -184,22 +179,20 @@ def test_multi_day_counts_are_cumulative(base_config):
     )
     config = {**base_config, "total_limit_per_member": 4}
 
-    for _ in range(5):
-        shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
-            timetable_multi, copy.deepcopy(_base_members()), config=config
-        )
-        assert infeasible_days == {}
-        assert_multi_day_constraints(
-            shift_result, updated, timetable_multi, config, infeasible_days={}
-        )
+    shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
+        timetable_multi, copy.deepcopy(_base_members()), config=config
+    )
+    assert infeasible_days == {}
+    assert_multi_day_constraints(
+        shift_result, updated, timetable_multi, config, infeasible_days={}
+    )
 
-        # 通算: 全日の配置数を足すと count になる（helper側でも見ているが明示）
-        totals = {}
-        for day_key, day_shift in shift_result.items():
-            for name, n in count_assignments_in_day_shift(day_shift).items():
-                totals[name] = totals.get(name, 0) + n
-        for m in updated:
-            assert m["count"] == totals.get(m["name"], 0)
+    totals = {}
+    for day_key, day_shift in shift_result.items():
+        for name, n in count_assignments_in_day_shift(day_shift).items():
+            totals[name] = totals.get(name, 0) + n
+    for m in updated:
+        assert m["count"] == totals.get(m["name"], 0)
 
 
 def _multi_day_timetable(num_days, bands_per_day):
@@ -234,20 +227,18 @@ def test_target_days_gathers_member_into_few_days(base_config):
     timetable_multi = _multi_day_timetable(num_days=5, bands_per_day=4)
     members = _base_members() + [_member("L5", 3, 3), _member("L6", 3, 3)]
     members[0]["target_days"] = 2  # L1 は5日のうち2日にまとめたい
-    config = {**base_config, "candidate_count": 12}
 
-    for _ in range(5):
-        shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
-            timetable_multi, copy.deepcopy(members), config=config
-        )
-        assert infeasible_days == {}
-        assert_multi_day_constraints(
-            shift_result, updated, timetable_multi, config, infeasible_days={}
-        )
-        worked = _days_worked(shift_result, "L1")
-        assert len(worked) <= 2, f"L1 が {sorted(worked)} の{len(worked)}日に散らばっている"
-        l1 = next(m for m in updated if m["name"] == "L1")
-        assert sorted(l1["worked_days"]) == sorted(int(k.split("_")[1]) for k in worked)
+    shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
+        timetable_multi, copy.deepcopy(members), config=base_config
+    )
+    assert infeasible_days == {}
+    assert_multi_day_constraints(
+        shift_result, updated, timetable_multi, base_config, infeasible_days={}
+    )
+    worked = _days_worked(shift_result, "L1")
+    assert len(worked) <= 2, f"L1 が {sorted(worked)} の{len(worked)}日に散らばっている"
+    l1 = next(m for m in updated if m["name"] == "L1")
+    assert sorted(l1["worked_days"]) == sorted(int(k.split("_")[1]) for k in worked)
 
 
 def test_target_days_is_soft_and_does_not_break_feasibility(base_config):
@@ -263,44 +254,68 @@ def test_target_days_is_soft_and_does_not_break_feasibility(base_config):
     ]
     members[0]["target_days"] = 1
 
-    for _ in range(5):
-        shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
-            timetable_multi, copy.deepcopy(members), config=base_config
-        )
-        assert infeasible_days == {}, "目安を理由に不成立になってはいけない（ソフト制約）"
-        assert_multi_day_constraints(
-            shift_result, updated, timetable_multi, base_config, infeasible_days={}
-        )
-        assert len(_days_worked(shift_result, "L1")) >= 2
+    shift_result, updated, infeasible_days = generate_pa_shift_multi_day(
+        timetable_multi, copy.deepcopy(members), config=base_config
+    )
+    assert infeasible_days == {}, "目安を理由に不成立になってはいけない（ソフト制約）"
+    assert_multi_day_constraints(
+        shift_result, updated, timetable_multi, base_config, infeasible_days={}
+    )
+    assert len(_days_worked(shift_result, "L1")) >= 2
 
 
-def test_quality_prefers_lower_shortage_risk():
-    """複数案の比較では、不成立の次に不足リスク（リーダー1人綱渡り）が低い案を選ぶ。"""
-    from app import _candidate_quality
+def test_desk_second_slot_is_assistant_or_vacant(base_config):
+    """卓の2人目はアシスタントのみ。リーダー2人編成にはしない。"""
+    bands = [f"B{i}" for i in range(12)]
+    timetable = generate_timetable("11:00", bands, 10, 10)
+    members = _base_members()
 
-    members = [{"name": "L1", "count": 3}, {"name": "L2", "count": 1}]
-    safe = _candidate_quality(0, 0, [2, 2], members)
-    risky = _candidate_quality(0, 3, [2, 2], members)
-    infeasible = _candidate_quality(1, 0, [2, 2], members)
-    assert safe < risky < infeasible
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(members), day_num=1, config=base_config
+    )
+    assert infeasible == []
+    members_map = members_by_name(updated)
+    vacant_seen = False
+    for band, teams in day_shift.items():
+        desk = teams["卓"]
+        assert len(desk) >= 1
+        assert members_map[desk[0]]["skill_desk"] >= LEADER_SKILL_LEVEL
+        if len(desk) == 1:
+            vacant_seen = True
+        else:
+            assert len(desk) == 2
+            assert members_map[desk[1]]["skill_desk"] < LEADER_SKILL_LEVEL, (
+                f"{band}: 卓の2人目がリーダーになっている {desk}"
+            )
+    assert vacant_seen, "アシスタント少数時は卓欠員のバンドが少なくとも1つあるはず"
 
-    # 公平さ（回数のばらつき）より不足リスクを優先する
-    even_but_risky = _candidate_quality(0, 2, [2, 2], [{"name": "a", "count": 2}, {"name": "b", "count": 2}])
-    uneven_but_safe = _candidate_quality(0, 0, [2, 2], [{"name": "a", "count": 5}, {"name": "b", "count": 0}])
-    assert uneven_but_safe < even_but_risky
 
-
-def test_quality_ignores_target_days_members_in_fairness():
-    """出勤日数を絞った人の回数は、全員均等という評価に含めない。"""
-    from app import _candidate_quality
-
-    with_focus = [
-        {"name": "a", "count": 4},
-        {"name": "b", "count": 4},
-        {"name": "f", "count": 1, "target_days": 1, "worked_days": [1]},
+def test_assistant_counts_stay_near_leader_counts(base_config):
+    """アシスタント少数でも、合計回数がリーダー平均から大きく乖離しない。"""
+    bands = [f"B{i}" for i in range(18)]
+    timetable = generate_timetable("11:00", bands, 10, 10)
+    # リーダー13 + アシスタント2（実データに近い偏り）
+    members = [_member(f"L{i}", 3, 3) for i in range(13)] + [
+        _member("A1", 1, 1),
+        _member("A2", 1, 1),
     ]
-    without_focus = [{"name": "a", "count": 4}, {"name": "b", "count": 4}]
-    assert _candidate_quality(0, 0, [2], with_focus)[-1] == _candidate_quality(0, 0, [2], without_focus)[-1]
+
+    day_shift, updated, infeasible = generate_pa_shift(
+        timetable, copy.deepcopy(members), day_num=1, config=base_config
+    )
+    assert infeasible == []
+    assert_day_shift_constraints(
+        day_shift, updated, timetable, base_config, day_num=1, infeasible_bands=[]
+    )
+
+    leaders = [m for m in updated if m["skill_desk"] >= LEADER_SKILL_LEVEL]
+    assistants = [m for m in updated if m["skill_desk"] < LEADER_SKILL_LEVEL]
+    leader_avg = sum(m["count"] for m in leaders) / len(leaders)
+    for a in assistants:
+        # リーダー平均の roughly 2倍以内（欠員制御が効いていれば旧ロジックの9回級にはならない）
+        assert a["count"] <= leader_avg * 2 + 2, (
+            f"{a['name']} count={a['count']} がリーダー平均 {leader_avg:.1f} から乖離しすぎ"
+        )
 
 
 def test_invalid_target_days_is_rejected():

@@ -853,7 +853,7 @@
                     <strong>💡 成立条件について:</strong>
                     卓・ステージとも「スキル3以上のリーダーを最低1名含むこと」が必須です。
                     リーダーを確保できないバンドは成立不可（エラー）として扱われます。
-                    卓は「リーダー1名＋アシスタント1名」が基本形で、アシスタント候補がいない場合はリーダー1名のみでも成立とみなします（リーダーを2名重複配置しません）。
+                    卓は「リーダー1名＋（アシスタント1名または欠員）」が基本形です。2人目にリーダーは入れず、アシスタントはリーダーと同じくらいの頻度になるよう調整し、超える場合は欠員にします。
                     ステージはリーダー確保後、人数上限までスキルを問わず優先度順に補充します。
                 </div>
 
@@ -909,11 +909,6 @@
                         指定すると、バンドに続けて入る回数（卓・ステージは問わない）がこの回数ずつになるようにまとめ、そのあとは休みを入れます（例: 2 なら「2バンド続けて入って休む」）。
                         目安なので、人手が足りないときは超えて続けて入ることがあります。日をまたいだ連続は数えません。
                     </p>
-                </div>
-
-                <div class="form-group">
-                    <label>🔀 生成パターン数（多いほど良い組み合わせを探索・最大50）</label>
-                    <select id="candidateCount"></select>
                 </div>
 
                 <div class="form-group">
@@ -1272,7 +1267,6 @@
             setInputValue('deskLimitPerMember', data.desk_limit_per_member);
             setInputValue('stageLimitPerMember', data.stage_limit_per_member);
             setInputValue('totalLimitPerMember', data.total_limit_per_member);
-            setInputValue('candidateCount', data.candidate_count);
             setInputValue('consecutiveRunTarget', data.consecutive_run_target);
 
             // JSONに明示的な値が入っていた目安は「ユーザー設定」として扱い、
@@ -3220,9 +3214,6 @@
             document.getElementById('totalLimitPerMember').innerHTML =
                 buildNumberOptions('', rangeValues(0, 50, 1), '無制限');
 
-            document.getElementById('candidateCount').innerHTML =
-                buildNumberOptions('', rangeValues(1, 50, 1), 'デフォルト: 12');
-
             document.getElementById('consecutiveRunTarget').innerHTML =
                 buildNumberOptions('', rangeValues(1, 10, 1), '指定なし');
 
@@ -3283,9 +3274,6 @@
 
             const totalLimitPerMember = getValue('totalLimitPerMember');
             if (totalLimitPerMember !== '') config.total_limit_per_member = parseInt(totalLimitPerMember);
-
-            const candidateCount = getValue('candidateCount');
-            if (candidateCount !== '') config.candidate_count = parseInt(candidateCount);
 
             const consecutiveRunTarget = getValue('consecutiveRunTarget');
             if (consecutiveRunTarget !== '') config.consecutive_run_target = parseInt(consecutiveRunTarget);
