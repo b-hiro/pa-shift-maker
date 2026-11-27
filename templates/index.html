@@ -699,6 +699,7 @@
                     <strong>.xlsx または .csv</strong> で保存して読み込みます。
                     「名前」「出演バンド」「1日目の入れない時間帯」などを自動判定し、スキルを変えずに出演バンドとNG時間だけを反映します。
                     同じ人の回答が複数ある場合は、下にある新しい回答を採用します。希望バンドは読み取りません。
+                    フォームに回答していない登録済みメンバーは、反映時にメンバー一覧から削除します。
                 </p>
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
                     <button type="button" class="btn-secondary" onclick="copyMemberNamesForGoogleForm()">👤 メンバー名一覧をコピー</button>
@@ -2977,7 +2978,7 @@
         function getUnansweredFormMembers(results) {
             if (!formResponseImportState || !formResponseImportState.mapping.includes('name')) return [];
             // 内容にエラーがあっても、回答シートに登録済みの名前があれば「回答済み」とみなす。
-            // 表記エラー等を理由に、回答した人まで誤って終日不可にしないため。
+            // 表記エラー等を理由に、回答した人まで誤って削除しないため。
             const respondedMemberIds = new Set(
                 results.filter(result => result.member).map(result => result.member.id)
             );
@@ -3070,11 +3071,11 @@
                 <div style="font-size:13px;margin-bottom:6px;">
                     反映 <strong>${importable.length}</strong>人 ／ 旧回答 <strong>${superseded}</strong>行 ／
                     <span style="color:#c62828;">除外 <strong>${errors}</strong>行</span> ／
-                    未回答（全日程を終日不可） <strong>${unansweredMembers.length}</strong>人
+                    未回答（メンバーから削除） <strong>${unansweredMembers.length}</strong>人
                 </div>
                 ${unansweredMembers.length ? `
                     <div style="font-size:12px;color:#8a5a00;background:#fff8e1;border-left:4px solid #ffa000;padding:10px;margin-bottom:10px;border-radius:6px;">
-                        <strong>⚠️ 未回答者は全日程を終日不可にします:</strong>
+                        <strong>⚠️ 未回答者はメンバー一覧から削除します:</strong>
                         ${unansweredMembers.map(member => escapeHtml(member.name)).join('、')}
                     </div>
                 ` : ''}
@@ -3085,7 +3086,7 @@
                     </table>
                 </div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                    <button type="button" class="btn-primary" ${importable.length + unansweredMembers.length === 0 || !state.mapping.includes('name') ? 'disabled' : ''} onclick="applyFormResponseImport()">✅ 回答${importable.length}人・未回答${unansweredMembers.length}人を反映</button>
+                    <button type="button" class="btn-primary" ${importable.length + unansweredMembers.length === 0 || !state.mapping.includes('name') ? 'disabled' : ''} onclick="applyFormResponseImport()">✅ 回答${importable.length}人を反映・未回答${unansweredMembers.length}人を削除</button>
                     <button type="button" class="btn-secondary" onclick="cancelFormResponseImport()">✕ やめる</button>
                 </div>
             `;
@@ -3098,7 +3099,7 @@
             const unansweredMembers = getUnansweredFormMembers(results);
             if (!targets.length && !unansweredMembers.length) return;
             if (!confirm(
-                `回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人は全日程を終日不可にします。` +
+                `回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人はメンバー一覧から削除します。` +
                 'スキル・希望バンドは変更しません。よろしいですか？'
             )) {
                 return;
@@ -3116,22 +3117,17 @@
                 member.ng_times = currentNgTimes;
             });
 
-            unansweredMembers.forEach(member => {
-                const currentNgTimes = Array.isArray(member.ng_times)
-                    ? { day_1: member.ng_times.slice() }
-                    : { ...(member.ng_times || {}) };
-                for (let day = 1; day <= appData.numDays; day++) {
-                    currentNgTimes[`day_${day}`] = ['00:00-23:59'];
-                }
-                member.ng_times = currentNgTimes;
-            });
+            const unansweredIds = new Set(unansweredMembers.map(member => member.id));
+            appData.members = appData.members.filter(member => !unansweredIds.has(member.id));
+            if (editingMemberId !== null && unansweredIds.has(editingMemberId)) {
+                cancelEditMember();
+            }
 
-            if (editingMemberId !== null) cancelEditMember();
             renderMembersList();
             updateMemberNgTimesUI();
             cancelFormResponseImport();
             setFormResponseImportMessage(
-                `✅ 回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人を全日程「終日不可」にしました。` +
+                `✅ 回答済み${targets.length}人の予定を反映し、未回答${unansweredMembers.length}人をメンバー一覧から削除しました。` +
                 'スキル・希望バンドは変更していません。',
                 '#2e7d32'
             );
