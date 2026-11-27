@@ -608,19 +608,16 @@
             </div>
 
             <div class="form-group" style="margin-bottom: 20px;">
-                <label>📂 入力データの読み込み・保存</label>
+                <label>📂 入力データの読み込み</label>
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                     <button type="button" class="btn-secondary" onclick="openJsonImportPicker()">
                         JSONファイルを選択
-                    </button>
-                    <button type="button" class="btn-secondary" onclick="downloadInputJson()">
-                        💾 JSONで保存
                     </button>
                     <input type="file" id="jsonImportInput" accept=".json,application/json" style="display: none;" onchange="importInputJson(event)">
                     <span id="jsonImportStatus" style="font-size: 13px; color: #666;">未選択</span>
                 </div>
                 <p style="font-size: 12px; color: #667eea; margin-top: 6px; line-height: 1.6;">
-                    保存はファイルのダウンロードだけです。画面に入力した内容はそのまま残ります。あとから同じファイルを「JSONファイルを選択」で戻せます。
+                    以前保存したJSONを読み込めます。保存はページ2で行います。
                 </p>
             </div>
 
@@ -654,9 +651,6 @@
 
                 <!-- ナビゲーションボタン -->
                 <div class="button-group">
-                    <button type="button" class="btn-secondary" onclick="downloadInputJson()">
-                        💾 JSONで保存
-                    </button>
                     <button type="button" class="btn-primary" onclick="goToPage(2)">
                         次へ →
                     </button>
@@ -806,6 +800,10 @@
                     次へ →
                 </button>
             </div>
+            <p id="jsonSaveStatus" style="font-size: 12px; color: #666; margin-top: 8px;"></p>
+            <p style="font-size: 12px; color: #667eea; margin-top: 4px; line-height: 1.6;">
+                保存時に出力先フォルダとファイル名を選べます。画面の入力はそのまま残ります。
+            </p>
         </div>
 
         <!-- ページ3: プレビュー・出力 -->
@@ -977,9 +975,6 @@
             <div class="button-group">
                 <button type="button" class="btn-secondary" onclick="goToPage(2)">
                     ← 前へ
-                </button>
-                <button type="button" class="btn-secondary" onclick="downloadInputJson()">
-                    💾 JSONで保存
                 </button>
                 <button type="button" class="btn-primary" onclick="generateShiftAndPreview()">
                     🔄 シフトを生成
@@ -1385,33 +1380,66 @@
             };
         }
 
-        function downloadInputJson() {
+        function defaultInputJsonFilename(data) {
+            const firstDate = data.days[0] && data.days[0].date;
+            const now = new Date();
+            const localDate = [
+                now.getFullYear(),
+                String(now.getMonth() + 1).padStart(2, '0'),
+                String(now.getDate()).padStart(2, '0')
+            ].join('-');
+            const datePart = firstDate
+                ? String(firstDate).replace(/-/g, '')
+                : localDate;
+            return `pa_shift_input_${datePart}.json`;
+        }
+
+        function fallbackDownloadJson(blob, filename) {
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }
+
+        async function downloadInputJson() {
+            const saveStatus = document.getElementById('jsonSaveStatus');
             try {
                 const data = buildInputJson();
                 const json = JSON.stringify(data, null, 2);
                 const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                const firstDate = data.days[0] && data.days[0].date;
-                const now = new Date();
-                const localDate = [
-                    now.getFullYear(),
-                    String(now.getMonth() + 1).padStart(2, '0'),
-                    String(now.getDate()).padStart(2, '0')
-                ].join('-');
-                const datePart = firstDate
-                    ? String(firstDate).replace(/-/g, '')
-                    : localDate;
-                const filename = `pa_shift_input_${datePart}.json`;
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
+                const suggestedName = defaultInputJsonFilename(data);
+                let savedAs = suggestedName;
 
-                const status = document.getElementById('jsonImportStatus');
-                if (status) status.textContent = `保存しました: ${filename}`;
+                if (window.showSaveFilePicker) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName,
+                            types: [{
+                                description: 'JSON',
+                                accept: { 'application/json': ['.json'] }
+                            }]
+                        });
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        savedAs = handle.name || suggestedName;
+                    } catch (pickerError) {
+                        // ユーザーがダイアログをキャンセルした場合は何もしない
+                        if (pickerError && pickerError.name === 'AbortError') return;
+                        throw pickerError;
+                    }
+                } else {
+                    // 保存ダイアログ非対応ブラウザ向けのフォールバック
+                    fallbackDownloadJson(blob, suggestedName);
+                }
+
+                if (saveStatus) saveStatus.textContent = `保存しました: ${savedAs}`;
+                const importStatus = document.getElementById('jsonImportStatus');
+                if (importStatus) importStatus.textContent = `保存済み: ${savedAs}`;
 
                 if (editingMemberId !== null) {
                     alert('JSONファイルを保存しました。画面の入力はそのまま残っています。\n※いま編集中のメンバーは「メンバーを更新」を押すまでファイルに含まれません。');
@@ -1420,6 +1448,7 @@
                 }
             } catch (error) {
                 console.error('JSON保存エラー:', error);
+                if (saveStatus) saveStatus.textContent = `保存に失敗しました: ${error.message}`;
                 alert(`JSONの保存に失敗しました: ${error.message}`);
             }
         }
